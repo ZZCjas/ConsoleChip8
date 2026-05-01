@@ -6,7 +6,10 @@
 #include <ctime>
 #include <windows.h>
 #include <string>
-#include <sstream>
+#include <chrono>
+#include <thread>
+#include <atomic>
+#include <limits>
 
 using namespace std;
 
@@ -24,7 +27,6 @@ EmuConfig loadConfig(const string& configPath = "chip8.cfg")
     ifstream file(configPath);
     if (!file.is_open())
     {
-        // 配置文件不存在，自动创建默认配置
         ofstream newFile(configPath);
         if (newFile.is_open())
         {
@@ -35,7 +37,7 @@ EmuConfig loadConfig(const string& configPath = "chip8.cfg")
             newFile.close();
             cout << "Created default configuration file: " << configPath << endl;
         }
-        return cfg;  // 返回默认值
+        return cfg;
     }
 
     string line;
@@ -62,17 +64,17 @@ EmuConfig loadConfig(const string& configPath = "chip8.cfg")
 class Chip8
 {
 private:
-    uint8_t memory[4096];   // 4KB 内存
-    uint8_t V[16];          // 寄存器 V0～VF
-    uint16_t I;             // 索引寄存器
-    uint16_t pc;            // 程序计数器（初始 0x200）
-    uint16_t stack[16];     // 堆栈（深度 16）
-    uint8_t sp;             // 堆栈指针
-    uint8_t delay_timer;    // 延迟定时器
-    uint8_t sound_timer;    // 声音定时器
-    bool display[64 * 32];  // 屏幕像素 (64x32)
-    uint8_t keypad[16];     // 键盘状态
-    char pixel_char;        // 像素显示字符
+    uint8_t memory[4096];
+    uint8_t V[16];
+    uint16_t I;
+    uint16_t pc;
+    uint16_t stack[16];
+    uint8_t sp;
+    uint8_t delay_timer;
+    uint8_t sound_timer;
+    bool display[64 * 32];
+    uint8_t keypad[16];
+    char pixel_char;
 
 public:
     Chip8(char pixel) : pixel_char(pixel)
@@ -88,24 +90,15 @@ public:
         memset(display, 0, sizeof(display));
         memset(keypad, 0, sizeof(keypad));
 
-        // 加载内置字体
         const uint8_t fontset[80] = {
-            0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
-            0x20, 0x60, 0x20, 0x20, 0x70, // 1
-            0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
-            0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
-            0x90, 0x90, 0xF0, 0x10, 0x10, // 4
-            0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
-            0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
-            0xF0, 0x10, 0x20, 0x40, 0x40, // 7
-            0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
-            0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
-            0xF0, 0x90, 0xF0, 0x90, 0x90, // A
-            0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
-            0xF0, 0x80, 0x80, 0x80, 0xF0, // C
-            0xE0, 0x90, 0x90, 0x90, 0xE0, // D
-            0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
-            0xF0, 0x80, 0xF0, 0x80, 0x80  // F
+            0xF0, 0x90, 0x90, 0x90, 0xF0, 0x20, 0x60, 0x20, 0x20, 0x70,
+            0xF0, 0x10, 0xF0, 0x80, 0xF0, 0xF0, 0x10, 0xF0, 0x10, 0xF0,
+            0x90, 0x90, 0xF0, 0x10, 0x10, 0xF0, 0x80, 0xF0, 0x10, 0xF0,
+            0xF0, 0x80, 0xF0, 0x90, 0xF0, 0xF0, 0x10, 0x20, 0x40, 0x40,
+            0xF0, 0x90, 0xF0, 0x90, 0xF0, 0xF0, 0x90, 0xF0, 0x10, 0xF0,
+            0xF0, 0x90, 0xF0, 0x90, 0x90, 0xE0, 0x90, 0xE0, 0x90, 0xE0,
+            0xF0, 0x80, 0x80, 0x80, 0xF0, 0xE0, 0x90, 0x90, 0x90, 0xE0,
+            0xF0, 0x80, 0xF0, 0x80, 0xF0, 0xF0, 0x80, 0xF0, 0x80, 0x80
         };
         memcpy(memory, fontset, 80);
         srand((unsigned)time(nullptr));
@@ -134,7 +127,50 @@ public:
 
         memcpy(memory + ROM_START, buffer.data(), static_cast<size_t>(size));
         pc = ROM_START;
+        I = 0;
+        sp = 0;
+        memset(V, 0, sizeof(V));
+        memset(stack, 0, sizeof(stack));
+        delay_timer = 0;
+        sound_timer = 0;
+        memset(display, 0, sizeof(display));
         return true;
+    }
+
+    bool DumpState(const string& file)
+    {
+        ofstream dump(file, ios::binary);
+        if (!dump.is_open())
+            return false;
+
+        dump.write(reinterpret_cast<const char*>(memory), sizeof(memory));
+        dump.write(reinterpret_cast<const char*>(V), sizeof(V));
+        dump.write(reinterpret_cast<const char*>(&I), sizeof(I));
+        dump.write(reinterpret_cast<const char*>(&pc), sizeof(pc));
+        dump.write(reinterpret_cast<const char*>(stack), sizeof(stack));
+        dump.write(reinterpret_cast<const char*>(&sp), sizeof(sp));
+        dump.write(reinterpret_cast<const char*>(&delay_timer), sizeof(delay_timer));
+        dump.write(reinterpret_cast<const char*>(&sound_timer), sizeof(sound_timer));
+        dump.write(reinterpret_cast<const char*>(display), sizeof(display));
+        return dump.good();
+    }
+
+    bool LoadDump(const string& file)
+    {
+        ifstream dump(file, ios::binary);
+        if (!dump.is_open())
+            return false;
+
+        dump.read(reinterpret_cast<char*>(memory), sizeof(memory));
+        dump.read(reinterpret_cast<char*>(V), sizeof(V));
+        dump.read(reinterpret_cast<char*>(&I), sizeof(I));
+        dump.read(reinterpret_cast<char*>(&pc), sizeof(pc));
+        dump.read(reinterpret_cast<char*>(stack), sizeof(stack));
+        dump.read(reinterpret_cast<char*>(&sp), sizeof(sp));
+        dump.read(reinterpret_cast<char*>(&delay_timer), sizeof(delay_timer));
+        dump.read(reinterpret_cast<char*>(&sound_timer), sizeof(sound_timer));
+        dump.read(reinterpret_cast<char*>(display), sizeof(display));
+        return dump.good();
     }
 
     void emulateCycle()
@@ -147,248 +183,91 @@ public:
         case 0x0000:
             switch (opcode & 0x00FF)
             {
-            case 0xE0:
-                memset(display, 0, sizeof(display));
-                break;
-            case 0xEE:
-                if (sp > 0)
-                    pc = stack[--sp];
-                break;
+            case 0xE0: memset(display, 0, sizeof(display)); break;
+            case 0xEE: if (sp > 0) pc = stack[--sp]; break;
             }
             break;
-        case 0x1000:
-            pc = opcode & 0x0FFF;
-            break;
-        case 0x2000:
-            if (sp < 16)
-            {
-                stack[sp++] = pc;
-                pc = opcode & 0x0FFF;
-            }
-            break;
-        case 0x3000:
-            {
-                uint8_t X = (opcode >> 8) & 0x0F;
-                if (V[X] == (opcode & 0x00FF))
-                    pc += 2;
-            }
-            break;
-        case 0x4000:
-            {
-                uint8_t X = (opcode >> 8) & 0x0F;
-                if (V[X] != (opcode & 0x00FF))
-                    pc += 2;
-            }
-            break;
-        case 0x5000:
-            {
-                uint8_t X = (opcode >> 8) & 0x0F;
-                uint8_t Y = (opcode >> 4) & 0x0F;
-                if (V[X] == V[Y])
-                    pc += 2;
-            }
-            break;
-        case 0x6000:
-            V[(opcode >> 8) & 0x0F] = opcode & 0x00FF;
-            break;
-        case 0x7000:
-            V[(opcode >> 8) & 0x0F] += opcode & 0x00FF;
-            break;
+        case 0x1000: pc = opcode & 0x0FFF; break;
+        case 0x2000: if (sp < 16) { stack[sp++] = pc; pc = opcode & 0x0FFF; } break;
+        case 0x3000: { uint8_t X = (opcode >> 8) & 0x0F; if (V[X] == (opcode & 0x00FF)) pc += 2; } break;
+        case 0x4000: { uint8_t X = (opcode >> 8) & 0x0F; if (V[X] != (opcode & 0x00FF)) pc += 2; } break;
+        case 0x5000: { uint8_t X = (opcode >> 8) & 0x0F; uint8_t Y = (opcode >> 4) & 0x0F; if (V[X] == V[Y]) pc += 2; } break;
+        case 0x6000: V[(opcode >> 8) & 0x0F] = opcode & 0x00FF; break;
+        case 0x7000: V[(opcode >> 8) & 0x0F] += opcode & 0x00FF; break;
         case 0x8000:
             switch (opcode & 0x000F)
             {
-            case 0x0:
-                {
-                    uint8_t X = (opcode >> 8) & 0x0F;
-                    uint8_t Y = (opcode >> 4) & 0x0F;
-                    V[X] = V[Y];
-                }
-                break;
-            case 0x1:
-                {
-                    uint8_t X = (opcode >> 8) & 0x0F;
-                    uint8_t Y = (opcode >> 4) & 0x0F;
-                    V[X] |= V[Y];
-                    V[0xF] = 0;
-                }
-                break;
-            case 0x2:
-                {
-                    uint8_t X = (opcode >> 8) & 0x0F;
-                    uint8_t Y = (opcode >> 4) & 0x0F;
-                    V[X] &= V[Y];
-                    V[0xF] = 0;
-                }
-                break;
-            case 0x3:
-                {
-                    uint8_t X = (opcode >> 8) & 0x0F;
-                    uint8_t Y = (opcode >> 4) & 0x0F;
-                    V[X] ^= V[Y];
-                    V[0xF] = 0;
-                }
-                break;
-            case 0x4:
-                {
-                    uint8_t X = (opcode >> 8) & 0x0F;
-                    uint8_t Y = (opcode >> 4) & 0x0F;
-                    uint16_t sum = V[X] + V[Y];
-                    V[0xF] = sum > 0xFF;
-                    V[X] = sum & 0xFF;
-                }
-                break;
-            case 0x5:
-                {
-                    uint8_t X = (opcode >> 8) & 0x0F;
-                    uint8_t Y = (opcode >> 4) & 0x0F;
-                    V[0xF] = V[X] >= V[Y];
-                    V[X] -= V[Y];
-                }
-                break;
-            case 0x6:
-                {
-                    uint8_t X = (opcode >> 8) & 0x0F;
-                    V[0xF] = V[X] & 0x01;
-                    V[X] >>= 1;
-                }
-                break;
-            case 0x7:
-                {
-                    uint8_t X = (opcode >> 8) & 0x0F;
-                    uint8_t Y = (opcode >> 4) & 0x0F;
-                    V[0xF] = V[Y] >= V[X];
-                    V[X] = V[Y] - V[X];
-                }
-                break;
-            case 0xE:
-                {
-                    uint8_t X = (opcode >> 8) & 0x0F;
-                    V[0xF] = (V[X] >> 7) & 0x01;
-                    V[X] <<= 1;
-                }
-                break;
+            case 0x0: { uint8_t X = (opcode >> 8) & 0x0F; uint8_t Y = (opcode >> 4) & 0x0F; V[X] = V[Y]; } break;
+            case 0x1: { uint8_t X = (opcode >> 8) & 0x0F; uint8_t Y = (opcode >> 4) & 0x0F; V[X] |= V[Y]; V[0xF] = 0; } break;
+            case 0x2: { uint8_t X = (opcode >> 8) & 0x0F; uint8_t Y = (opcode >> 4) & 0x0F; V[X] &= V[Y]; V[0xF] = 0; } break;
+            case 0x3: { uint8_t X = (opcode >> 8) & 0x0F; uint8_t Y = (opcode >> 4) & 0x0F; V[X] ^= V[Y]; V[0xF] = 0; } break;
+            case 0x4: { uint8_t X = (opcode >> 8) & 0x0F; uint8_t Y = (opcode >> 4) & 0x0F; uint16_t sum = V[X] + V[Y]; V[0xF] = sum > 0xFF; V[X] = sum & 0xFF; } break;
+            case 0x5: { uint8_t X = (opcode >> 8) & 0x0F; uint8_t Y = (opcode >> 4) & 0x0F; V[0xF] = V[X] >= V[Y]; V[X] -= V[Y]; } break;
+            case 0x6: { uint8_t X = (opcode >> 8) & 0x0F; V[0xF] = V[X] & 0x01; V[X] >>= 1; } break;
+            case 0x7: { uint8_t X = (opcode >> 8) & 0x0F; uint8_t Y = (opcode >> 4) & 0x0F; V[0xF] = V[Y] >= V[X]; V[X] = V[Y] - V[X]; } break;
+            case 0xE: { uint8_t X = (opcode >> 8) & 0x0F; V[0xF] = (V[X] >> 7) & 0x01; V[X] <<= 1; } break;
             }
             break;
-        case 0x9000:
-            {
-                uint8_t X = (opcode >> 8) & 0x0F;
-                uint8_t Y = (opcode >> 4) & 0x0F;
-                if (V[X] != V[Y])
-                    pc += 2;
-            }
-            break;
-        case 0xA000:
-            I = opcode & 0x0FFF;
-            break;
-        case 0xB000:
-            pc = V[0] + (opcode & 0x0FFF);
-            break;
-        case 0xC000:
-            {
-                uint8_t X = (opcode >> 8) & 0x0F;
-                V[X] = (rand() % 256) & (opcode & 0x00FF);
-            }
-            break;
+        case 0x9000: { uint8_t X = (opcode >> 8) & 0x0F; uint8_t Y = (opcode >> 4) & 0x0F; if (V[X] != V[Y]) pc += 2; } break;
+        case 0xA000: I = opcode & 0x0FFF; break;
+        case 0xB000: pc = V[0] + (opcode & 0x0FFF); break;
+        case 0xC000: { uint8_t X = (opcode >> 8) & 0x0F; V[X] = (rand() % 256) & (opcode & 0x00FF); } break;
         case 0xD000:
+        {
+            uint8_t X = V[(opcode >> 8) & 0x0F];
+            uint8_t Y = V[(opcode >> 4) & 0x0F];
+            uint8_t N = opcode & 0x000F;
+            V[0xF] = 0;
+            for (int row = 0; row < N; row++)
             {
-                uint8_t X = V[(opcode >> 8) & 0x0F];
-                uint8_t Y = V[(opcode >> 4) & 0x0F];
-                uint8_t N = opcode & 0x000F;
-                V[0xF] = 0;
-                for (int row = 0; row < N; row++)
+                uint8_t sprite = memory[I + row];
+                for (int col = 0; col < 8; col++)
                 {
-                    uint8_t sprite = memory[I + row];
-                    for (int col = 0; col < 8; col++)
-                    {
-                        if ((sprite & (0x80 >> col)) == 0)
-                            continue;
-                        int x = (X + col) % 64;
-                        int y = (Y + row) % 32;
-                        int idx = y * 64 + x;
-                        if (display[idx])
-                            V[0xF] = 1;
-                        display[idx] ^= 1;
-                    }
+                    if ((sprite & (0x80 >> col)) == 0) continue;
+                    int x = (X + col) % 64;
+                    int y = (Y + row) % 32;
+                    int idx = y * 64 + x;
+                    if (display[idx]) V[0xF] = 1;
+                    display[idx] ^= 1;
                 }
             }
-            break;
+        }
+        break;
         case 0xE000:
             switch (opcode & 0x00FF)
             {
-            case 0x9E:
-                {
-                    uint8_t X = (opcode >> 8) & 0x0F;
-                    if (keypad[V[X]])
-                        pc += 2;
-                }
-                break;
-            case 0xA1:
-                {
-                    uint8_t X = (opcode >> 8) & 0x0F;
-                    if (!keypad[V[X]])
-                        pc += 2;
-                }
-                break;
+            case 0x9E: { uint8_t X = (opcode >> 8) & 0x0F; if (keypad[V[X]]) pc += 2; } break;
+            case 0xA1: { uint8_t X = (opcode >> 8) & 0x0F; if (!keypad[V[X]]) pc += 2; } break;
             }
             break;
         case 0xF000:
             switch (opcode & 0x00FF)
             {
-            case 0x07:
-                V[(opcode >> 8) & 0x0F] = delay_timer;
-                break;
-            case 0x15:
-                delay_timer = V[(opcode >> 8) & 0x0F];
-                break;
-            case 0x18:
-                sound_timer = V[(opcode >> 8) & 0x0F];
-                break;
-            case 0x1E:
-                I += V[(opcode >> 8) & 0x0F];
-                break;
+            case 0x07: V[(opcode >> 8) & 0x0F] = delay_timer; break;
+            case 0x15: delay_timer = V[(opcode >> 8) & 0x0F]; break;
+            case 0x18: sound_timer = V[(opcode >> 8) & 0x0F]; break;
+            case 0x1E: I += V[(opcode >> 8) & 0x0F]; break;
             case 0x0A:
-                {
-                    uint8_t X = (opcode >> 8) & 0x0F;
-                    bool pressed = false;
-                    for (int i = 0; i < 16; i++)
-                    {
-                        if (keypad[i])
-                        {
-                            V[X] = i;
-                            pressed = true;
-                            break;
-                        }
-                    }
-                    if (!pressed)
-                        pc -= 2;
-                }
-                break;
-            case 0x29:
-                I = (V[(opcode >> 8) & 0x0F] & 0x0F) * 5;
-                break;
+            {
+                uint8_t X = (opcode >> 8) & 0x0F;
+                bool pressed = false;
+                for (int i = 0; i < 16; i++)
+                    if (keypad[i]) { V[X] = i; pressed = true; break; }
+                if (!pressed) pc -= 2;
+            }
+            break;
+            case 0x29: I = (V[(opcode >> 8) & 0x0F] & 0x0F) * 5; break;
             case 0x33:
-                {
-                    uint8_t X = (opcode >> 8) & 0x0F;
-                    uint8_t val = V[X];
-                    memory[I] = val / 100;
-                    memory[I+1] = (val / 10) % 10;
-                    memory[I+2] = val % 10;
-                }
-                break;
-            case 0x55:
-                {
-                    uint8_t X = (opcode >> 8) & 0x0F;
-                    for (int i = 0; i <= X; i++)
-                        memory[I+i] = V[i];
-                }
-                break;
-            case 0x65:
-                {
-                    uint8_t X = (opcode >> 8) & 0x0F;
-                    for (int i = 0; i <= X; i++)
-                        V[i] = memory[I+i];
-                }
-                break;
+            {
+                uint8_t X = (opcode >> 8) & 0x0F;
+                uint8_t val = V[X];
+                memory[I] = val / 100;
+                memory[I+1] = (val / 10) % 10;
+                memory[I+2] = val % 10;
+            }
+            break;
+            case 0x55: { uint8_t X = (opcode >> 8) & 0x0F; for (int i = 0; i <= X; i++) memory[I+i] = V[i]; } break;
+            case 0x65: { uint8_t X = (opcode >> 8) & 0x0F; for (int i = 0; i <= X; i++) V[i] = memory[I+i]; } break;
             }
             break;
         }
@@ -402,9 +281,8 @@ public:
 
         for (int row = 0; row < 32; ++row)
         {
-            char lineBuffer[129]; // 64列 * 2字符
-            linePos.Y = row;
-
+            char lineBuffer[129];
+            linePos.Y = row + 1;
             for (int col = 0; col < 64; ++col)
             {
                 bool pixel = display[row * 64 + col];
@@ -416,107 +294,331 @@ public:
         }
     }
 
-    void updateKeyboard()
+    // 更新键盘，忽略指定的键（用于功能键）
+    void updateKeyboard(const bool* forbiddenKeys = nullptr)
     {
         const int keyMapping[16] = {
-            'X', '1', '2', '3', // 0 1 2 3
-            'Q', 'W', 'E', 'A', // 4 5 6 7
-            'S', 'D', 'Z', 'C', // 8 9 A B
-            '4', 'R', 'F', 'V'  // C D E F
+            'X', '1', '2', '3',
+            'Q', 'W', 'E', 'A',
+            'S', 'D', 'Z', 'C',
+            '4', 'R', 'F', 'V'
         };
         for (int i = 0; i < 16; i++)
         {
+            if (forbiddenKeys && forbiddenKeys[keyMapping[i] & 0xFF])
+                continue;
             keypad[i] = (GetAsyncKeyState(keyMapping[i]) & 0x8000) ? 1 : 0;
         }
     }
 
     void updateTimers()
     {
-        if (delay_timer > 0)
-            delay_timer--;
+        if (delay_timer > 0) delay_timer--;
         if (sound_timer > 0)
         {
             sound_timer--;
             if (sound_timer == 0)
-                Beep(880, 50);
+                CreateThread(nullptr, 0, [](LPVOID) -> DWORD { Beep(880, 50); return 0; }, nullptr, 0, nullptr);
         }
     }
 };
-int main(int argc, char* argv[])
-{
-    // 加载配置（若文件不存在会自动创建）
-    EmuConfig cfg = loadConfig();
 
-    // 设置控制台大小
-    system("mode con cols=128 lines=32");
-    // 隐藏光标
+// ---------- UI 菜单栏 ----------
+enum class AppState
+{
+    MENU,
+    RUNNING,
+    PAUSED
+};
+
+void ShowConsoleCursor(bool show)
+{
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_CURSOR_INFO cci;
+    GetConsoleCursorInfo(hConsole, &cci);
+    cci.bVisible = show;
+    SetConsoleCursorInfo(hConsole, &cci);
+}
+
+void ClearConsoleInputBuffer()
+{
+    HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+    FlushConsoleInputBuffer(hStdin);
+    cin.clear();
+    //cin.ignore(numeric_limits<streamsize>::max(), '\n');
+}
+
+void DrawTopBar(AppState state, bool romLoaded)
+{
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    COORD topLeft = {0, 0};
+    DWORD written;
+
+    const char* bar = nullptr;
+    if (state == AppState::MENU)
+    {
+        bar = "[F1] Boot From ROM   [F2] Load Dump   [F3] About   [F4] Exit";
+    }
+    else
+    {
+        const char* pauseText = (state == AppState::RUNNING) ? "Stop" : "Start";
+        static string barStr;
+        barStr = "[F1] " + string(pauseText) + "   [F2] Dump   [F3] About   [F4] Exit";
+        bar = barStr.c_str();
+    }
+
+    char line[128];
+    memset(line, ' ', 127);
+    line[127] = '\0';
+    WriteConsoleOutputCharacterA(hConsole, line, 127, topLeft, &written);
+    WriteConsoleOutputCharacterA(hConsole, bar, strlen(bar), topLeft, &written);
+}
+
+void ShowAbout()
+{
+    system("cls");
+    cout << "========================================\n";
+    cout << "        ConsoleChip8 Emulator\n";
+    cout << "        By ZZCjas\n";
+    cout << "========================================\n";
+    cout << "\nKeyboard Mapping (CHIP-8 -> PC):\n";
+    cout << "  CHIP-8 Key   PC Key\n";
+    cout << "  -------------------\n";
+    cout << "      0          X\n";
+    cout << "      1          1\n";
+    cout << "      2          2\n";
+    cout << "      3          3\n";
+    cout << "      4          Q\n";
+    cout << "      5          W\n";
+    cout << "      6          E\n";
+    cout << "      7          A\n";
+    cout << "      8          S\n";
+    cout << "      9          D\n";
+    cout << "      A          Z\n";
+    cout << "      B          C\n";
+    cout << "      C          4\n";
+    cout << "      D          R\n";
+    cout << "      E          F\n";
+    cout << "      F          V\n";
+    cout << "\nFunction keys: F1 (Start/Stop), F2 (Dump), F3 (About), F4 (Exit)\n";
+    cout << "========================================\n";
+    system("pause");
+    system("cls");
+}
+
+// ---------- 精准计时辅助函数 ----------
+class PreciseTimer
+{
+private:
+    LARGE_INTEGER frequency;
+    LARGE_INTEGER start;
+public:
+    PreciseTimer() { QueryPerformanceFrequency(&frequency); QueryPerformanceCounter(&start); }
+    void reset() { QueryPerformanceCounter(&start); }
+    double elapsedSeconds() const
+    {
+        LARGE_INTEGER now;
+        QueryPerformanceCounter(&now);
+        return static_cast<double>(now.QuadPart - start.QuadPart) / frequency.QuadPart;
+    }
+    void sleepUntil(double targetSeconds)
+    {
+        while (elapsedSeconds() < targetSeconds) Sleep(1);
+    }
+};
+
+// ---------- 主函数 ----------
+int main()
+{
+    EmuConfig cfg = loadConfig();
+    system("mode con cols=128 lines=34");
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
     CONSOLE_CURSOR_INFO cci = {1, FALSE};
     SetConsoleCursorInfo(hConsole, &cci);
     system("title ConsoleChip8");
 
-    // 清屏
-    system("cls");
-
     Chip8 chip(cfg.pixel_char);
-    string romPath;
+    AppState state = AppState::MENU;
+    bool romLoaded = false;
 
-    // 处理 ROM 加载
-    if (argc >= 2)
-    {
-        romPath = argv[1];
-    }
-    else
-    {
-        cout << "Please enter binary file path: ";
-        getline(cin, romPath);
-        system("cls");  // 清屏准备运行
-    }
+    const int keyF1 = VK_F1, keyF2 = VK_F2, keyF3 = VK_F3, keyF4 = VK_F4;
 
-    if (!chip.BootFromROM(romPath))
-    {
-        cerr << "Failed to load file: " << romPath << endl;
-        cerr << "Press any key to exit..." << endl;
-        cin.get();
-        return 1;
-    }
+    // 上升沿检测上次状态
+    bool lastF1 = false, lastF2 = false, lastF3 = false, lastF4 = false;
 
-    // 主循环参数
-    const DWORD FRAME_MS = cfg.frame_ms;
-    const int OPS_PER_FRAME = cfg.ops_per_frame;
+    // 功能键屏蔽，传递给 chip.updateKeyboard 时忽略
+    bool forbidden[256] = {false};
+    forbidden[keyF1] = true;
+    forbidden[keyF2] = true;
+    forbidden[keyF3] = true;
+    forbidden[keyF4] = true;
 
-    DWORD lastTimer = GetTickCount();
-    DWORD lastFrame = GetTickCount();
+    const double FRAME_SEC = cfg.frame_ms / 1000.0;
+    PreciseTimer frameTimer;
+    DWORD lastTimerTick = GetTickCount();
+
+    system("cls");
+    DrawTopBar(state, romLoaded);
 
     while (true)
     {
-        DWORD now = GetTickCount();
+        bool curF1 = (GetAsyncKeyState(keyF1) & 0x8000) != 0;
+        bool curF2 = (GetAsyncKeyState(keyF2) & 0x8000) != 0;
+        bool curF3 = (GetAsyncKeyState(keyF3) & 0x8000) != 0;
+        bool curF4 = (GetAsyncKeyState(keyF4) & 0x8000) != 0;
 
-        // 执行一帧的指令
-        for (int i = 0; i < OPS_PER_FRAME; ++i)
+        // ---------- 菜单状态 ----------
+        if (state == AppState::MENU)
         {
-            chip.emulateCycle();
+            if (curF1 && !lastF1)
+            {
+                ClearConsoleInputBuffer();
+                ShowConsoleCursor(true);
+                system("cls");
+                cout << "Enter ROM file path: ";
+                string path;
+                getline(cin, path);
+                ShowConsoleCursor(false);
+                if (chip.BootFromROM(path))
+                {
+                    romLoaded = true;
+                    state = AppState::RUNNING;
+                    system("cls");
+                    DrawTopBar(state, romLoaded);
+                    frameTimer.reset();
+                    lastTimerTick = GetTickCount();
+                    chip.render();
+                }
+                else
+                {
+                    cout << "Failed to load ROM. Press any key to continue...";
+                    cin.get();
+                    system("cls");
+                    DrawTopBar(state, romLoaded);
+                }
+            }
+            else if (curF2 && !lastF2)
+            { 
+                ClearConsoleInputBuffer();
+                ShowConsoleCursor(true);
+                system("cls");
+                cout << "Enter dump file path: ";
+                string path;
+                getline(cin, path);
+                ShowConsoleCursor(false);
+                if (chip.LoadDump(path))
+                {
+                    romLoaded = true;
+                    state = AppState::RUNNING;
+                    system("cls");
+                    DrawTopBar(state, romLoaded);
+                    frameTimer.reset();
+                    lastTimerTick = GetTickCount();
+                    chip.render();
+                }
+                else
+                {
+                    cout << "Failed to load dump. Press any key to continue...";
+                    cin.get();
+                    system("cls");
+                    DrawTopBar(state, romLoaded);
+                }
+            }
+            else if (curF3 && !lastF3)
+            {
+                ShowAbout();
+                DrawTopBar(state, romLoaded);
+            }
+            else if (curF4 && !lastF4)
+            {
+                return 0;
+            }
+            Sleep(50);
+            lastF1 = curF1; lastF2 = curF2; lastF3 = curF3; lastF4 = curF4;
+            continue;
         }
 
-        // 处理输入
-        chip.updateKeyboard();
-
-        // 更新定时器 (60Hz)
-        if (now - lastTimer >= FRAME_MS)
+        // ---------- 运行或暂停状态 (romLoaded == true) ----------
+        if (state == AppState::RUNNING || state == AppState::PAUSED)
         {
-            chip.updateTimers();
-            lastTimer = now;
-        }
+            // 功能键处理（上升沿）
+            if (curF1 && !lastF1)
+            {
+                if (state == AppState::RUNNING)
+                    state = AppState::PAUSED;
+                else
+                    state = AppState::RUNNING;
+                DrawTopBar(state, romLoaded);
+                frameTimer.reset();
+                lastTimerTick = GetTickCount();
+                if (state == AppState::RUNNING)
+                    chip.render();   // 恢复时刷新画面
+            }
+            else if (curF2 && !lastF2)
+            {
+                ClearConsoleInputBuffer();
+                ShowConsoleCursor(true);
+                system("cls");
+                cout << "Enter dump file path to save: ";
+                string path;
+                getline(cin, path);
+                ShowConsoleCursor(false);
+                if (chip.DumpState(path))
+                    cout << "Dump saved successfully.\n";
+                else
+                    cout << "Failed to save dump.\n";
+                cout << "Press any key to continue...";
+                cin.get();
+                system("cls");
+                DrawTopBar(state, romLoaded);
+                chip.render();
+            }
+            else if (curF3 && !lastF3)
+            {
+                ShowAbout();
+                DrawTopBar(state, romLoaded);
+                chip.render();
+            }
+            else if (curF4 && !lastF4)
+            {
+                return 0;
+            }
 
-        // 渲染屏幕 (60Hz)
-        if (now - lastFrame >= FRAME_MS)
-        {
+            // 暂停状态：只刷新 UI 不模拟
+            if (state == AppState::PAUSED)
+            {
+                Sleep(20);
+                lastF1 = curF1; lastF2 = curF2; lastF3 = curF3; lastF4 = curF4;
+                continue;
+            }
+
+            // 模拟一帧
+            double frameStart = frameTimer.elapsedSeconds();
+            for (int i = 0; i < cfg.ops_per_frame; ++i)
+                chip.emulateCycle();
+
+            chip.updateKeyboard(forbidden);  // 忽略功能键
+
+            DWORD now = GetTickCount();
+            if (now - lastTimerTick >= cfg.frame_ms)
+            {
+                chip.updateTimers();
+                lastTimerTick = now;
+            }
+
             chip.render();
-            lastFrame = now;
+
+            double elapsed = frameTimer.elapsedSeconds() - frameStart;
+            double remaining = FRAME_SEC - elapsed;
+            if (remaining > 0.001)
+            {
+                Sleep(static_cast<DWORD>(remaining * 1000 * 0.9));
+                while (frameTimer.elapsedSeconds() - frameStart < FRAME_SEC)
+                    YieldProcessor();
+            }
         }
 
-        // 休眠释放 CPU
-        Sleep(1);
+        lastF1 = curF1; lastF2 = curF2; lastF3 = curF3; lastF4 = curF4;
     }
 
     return 0;
