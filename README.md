@@ -2,6 +2,8 @@
 
 A simple and well‑optimized single file CHIP‑8 emulator that runs directly in the Windows console.
 
+![LICENSE](https://camo.githubusercontent.com/382a3e1435f055f27a7b938f9152a25c8358abc88ed4312ade7cad5b237cb11d/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f6c6963656e73652f626974636f6f6b6965732f77696e7261722d6b657967656e2e7376673f6c6f676f3d676974687562)
+
 ## Features
 
 - Full CHIP‑8 instruction set implementation  
