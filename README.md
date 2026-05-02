@@ -24,7 +24,7 @@ This is a well‑optimized single file CHIP‑8 emulator that runs directly in t
 ## System Requirements
 
 - Any computer running Windows 2000 or later versions.
-- At least 10KB of RAM
+- At least 2~5MB of RAM
 - A screen which can contain a normal sized console window.
 
 ## Building
