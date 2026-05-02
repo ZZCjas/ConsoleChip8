@@ -10,6 +10,7 @@
 #include <thread>
 #include <atomic>
 #include <limits>
+#include <conio.h>
 #include <intrin.h>
 
 using namespace std;
@@ -321,9 +322,7 @@ public:
             WriteConsoleOutputCharacterA(hConsole, lineBuffer, 128, linePos, &charsWritten);
         }
     }
-
-    // 更新键盘，忽略指定的键（用于功能键）
-    void updateKeyboard(const bool* forbiddenKeys = nullptr)
+    void updateKeyboard()
     {
         const int keyMapping[16] = {
             'X', '1', '2', '3',
@@ -333,8 +332,6 @@ public:
         };
         for (int i = 0; i < 16; i++)
         {
-            if (forbiddenKeys && forbiddenKeys[keyMapping[i] & 0xFF])
-                continue;
             keypad[i] = (GetAsyncKeyState(keyMapping[i]) & 0x8000) ? 1 : 0;
         }
     }
@@ -345,11 +342,11 @@ public:
         if (sound_timer > 0)
         {
             sound_timer--;
-            should_play_sound = true; // 新增：声音定时器不为0时持续发声
+            should_play_sound = true;
         }
         else
         {
-            should_play_sound = false; // 新增：声音定时器为0时停止发声
+            should_play_sound = false; 
         }
     }
 };
@@ -384,7 +381,6 @@ void DrawTopBar(AppState state, bool romLoaded)
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
     COORD topLeft = {0, 0};
     DWORD written;
-
     const char* bar = nullptr;
     if (state == AppState::MENU)
     {
@@ -436,14 +432,12 @@ void ShowAbout()
     cout << "      C          4\n";
     cout << "      D          R\n";
     cout << "      E          F\n";
-    cout << "      F          V\n";
+    cout << "      F          V\n"<<endl;
     cout << "Press any key to continue...";
     ClearConsoleInputBuffer();
-    cin.get();
+    _getch();
     system("cls");
 }
-
-// ---------- 精准计时辅助函数 ----------
 class PreciseTimer
 {
 private:
@@ -463,48 +457,36 @@ public:
         while (elapsedSeconds() < targetSeconds) Sleep(1);
     }
 };
-
-// ---------- 主函数 ----------
+PreciseTimer frameTimer;
+bool romLoaded = false;
+const int keyF1 = VK_F1, keyF2 = VK_F2, keyF3 = VK_F3, keyF4 = VK_F4;// 上升沿检测上次状态
+bool lastF1 = false, lastF2 = false, lastF3 = false, lastF4 = false;
+bool forbidden[256] = {false};
 int main()
 {
-	ios::sync_with_stdio(0);
+	//ios::sync_with_stdio(0);
     EmuConfig cfg = loadConfig();
     system("mode con cols=128 lines=34");
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
     CONSOLE_CURSOR_INFO cci = {1, FALSE};
     SetConsoleCursorInfo(hConsole, &cci);
     system("title ConsoleChip8");
-
-    Chip8 chip(cfg.pixel_char, cfg.sound_enabled); // 修改：传入声音配置
+    Chip8 chip(cfg.pixel_char, cfg.sound_enabled);
     AppState state = AppState::MENU;
-    bool romLoaded = false;
-
-    const int keyF1 = VK_F1, keyF2 = VK_F2, keyF3 = VK_F3, keyF4 = VK_F4;
-
-    // 上升沿检测上次状态
-    bool lastF1 = false, lastF2 = false, lastF3 = false, lastF4 = false;
-
-    // 功能键屏蔽，传递给 chip.updateKeyboard 时忽略
-    bool forbidden[256] = {false};
-    forbidden[keyF1] = true;
-    forbidden[keyF2] = true;
-    forbidden[keyF3] = true;
-    forbidden[keyF4] = true;
-
+    forbidden[keyF1] = 1;
+    forbidden[keyF2] = 1;
+    forbidden[keyF3] = 1;
+    forbidden[keyF4] = 1;
     const double FRAME_SEC = cfg.frame_ms / 1000.0;
-    PreciseTimer frameTimer;
     DWORD lastTimerTick = GetTickCount();
-
     system("cls");
     DrawTopBar(state, romLoaded);
-
-    while (true)
+    while(1)
     {
         bool curF1 = (GetAsyncKeyState(keyF1) & 0x8000) != 0;
         bool curF2 = (GetAsyncKeyState(keyF2) & 0x8000) != 0;
         bool curF3 = (GetAsyncKeyState(keyF3) & 0x8000) != 0;
         bool curF4 = (GetAsyncKeyState(keyF4) & 0x8000) != 0;
-
         // ---------- 菜单状态 ----------
         if (state == AppState::MENU)
         {
@@ -530,7 +512,7 @@ int main()
                 else
                 {
                     cout << "Failed to load ROM. Press any key to continue...";
-                    cin.get();
+                    _getch();
                     system("cls");
                     DrawTopBar(state, romLoaded);
                 }
@@ -557,7 +539,7 @@ int main()
                 else
                 {
                     cout << "Failed to load dump. Press any key to continue...";
-                    cin.get();
+                    _getch();
                     system("cls");
                     DrawTopBar(state, romLoaded);
                 }
@@ -577,7 +559,6 @@ int main()
             lastF1 = curF1; lastF2 = curF2; lastF3 = curF3; lastF4 = curF4;
             continue;
         }
-
         // ---------- 运行或暂停状态 (romLoaded == true) ----------
         if (state == AppState::RUNNING || state == AppState::PAUSED)
         {
@@ -608,7 +589,7 @@ int main()
                 else
                     cout << "Failed to save dump.\n";
                 cout << "Press any key to continue...";
-                cin.get();
+                _getch();
                 system("cls");
                 DrawTopBar(state, romLoaded);
                 chip.render();
@@ -630,7 +611,6 @@ int main()
             	lastF1 = curF1; lastF2 = curF2; lastF3 = curF3; lastF4 = curF4;
                 continue;
             }
-
             // 暂停状态：只刷新 UI 不模拟
             if (state == AppState::PAUSED)
             {
@@ -638,23 +618,18 @@ int main()
                 lastF1 = curF1; lastF2 = curF2; lastF3 = curF3; lastF4 = curF4;
                 continue;
             }
-
             // 模拟一帧
             double frameStart = frameTimer.elapsedSeconds();
             for (int i = 0; i < cfg.ops_per_frame; ++i)
                 chip.emulateCycle();
-
-            chip.updateKeyboard(forbidden);  // 忽略功能键
-
+            chip.updateKeyboard();
             DWORD now = GetTickCount();
             if (now - lastTimerTick >= cfg.frame_ms)
             {
                 chip.updateTimers();
                 lastTimerTick = now;
             }
-
             chip.render();
-
             double elapsed = frameTimer.elapsedSeconds() - frameStart;
             double remaining = FRAME_SEC - elapsed;
             if (remaining > 0.001)
@@ -664,9 +639,7 @@ int main()
                     YieldProcessor();
             }
         }
-
         lastF1 = curF1; lastF2 = curF2; lastF3 = curF3; lastF4 = curF4;
     }
-
     return 0;
 }
