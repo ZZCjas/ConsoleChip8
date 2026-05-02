@@ -10,6 +10,7 @@
 #include <thread>
 #include <atomic>
 #include <limits>
+#include <intrin.h>
 
 using namespace std;
 
