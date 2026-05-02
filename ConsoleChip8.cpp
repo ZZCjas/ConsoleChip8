@@ -391,7 +391,7 @@ void DrawTopBar(AppState state, bool romLoaded)
     }
     else
     {
-        const char* pauseText = (state == AppState::RUNNING) ? "Stop" : "Resume";
+        const char* pauseText = (state == AppState::RUNNING) ? "Pause" : "Resume";
         static string barStr;
         barStr = "[F1] " + string(pauseText) + "   [F2] Dump   [F3] About   [F4] Back to Menu"; // 修改：F4改为返回主页面
         bar = barStr.c_str();
@@ -430,7 +430,7 @@ void ShowAbout()
     cout << "      D          R\n";
     cout << "      E          F\n";
     cout << "      F          V\n";
-    cout << "\nFunction keys: F1 (Load ROM/Resume/Stop), F2 (Dump), F3 (About), F4 (Back to Menu/Exit)\n";
+    cout << "\nFunction keys: F1 (Load ROM/Resume/Pause), F2 (Dump), F3 (About), F4 (Back to Menu/Exit)\n";
     cout << "========================================\n";
     cout << "Press any key to continue...";
     ClearConsoleInputBuffer();
