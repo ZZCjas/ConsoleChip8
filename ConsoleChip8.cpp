@@ -19,6 +19,7 @@ struct EmuConfig
     int ops_per_frame = 10;
     DWORD frame_ms = 16;
     char pixel_char = '#';
+    bool sound_enabled = true; // 新增：声音开关
 };
 
 EmuConfig loadConfig(const string& configPath = "chip8.cfg")
@@ -34,8 +35,11 @@ EmuConfig loadConfig(const string& configPath = "chip8.cfg")
             newFile << "ops_per_frame = 10\n";
             newFile << "frame_ms = 16\n";
             newFile << "pixel_char = #\n";
+            newFile << "sound_enabled = true\n"; // 新增：默认声音开启
             newFile.close();
             cout << "Created default configuration file: " << configPath << endl;
+            // 新增：等待1秒后再显示主页面
+            this_thread::sleep_for(chrono::seconds(1));
         }
         return cfg;
     }
@@ -50,12 +54,20 @@ EmuConfig loadConfig(const string& configPath = "chip8.cfg")
             continue;
         string key = line.substr(0, eqPos);
         string value = line.substr(eqPos + 1);
+        // 去除value前后的空格
+        size_t start = value.find_first_not_of(" \t");
+        size_t end = value.find_last_not_of(" \t");
+        if (start != string::npos && end != string::npos)
+            value = value.substr(start, end - start + 1);
+        
         if (key == "ops_per_frame")
             cfg.ops_per_frame = stoi(value);
         else if (key == "frame_ms")
             cfg.frame_ms = stoi(value);
         else if (key == "pixel_char" && !value.empty())
             cfg.pixel_char = value[0];
+        else if (key == "sound_enabled") // 新增：读取声音配置
+            cfg.sound_enabled = (value == "true" || value == "1" || value == "yes");
     }
     return cfg;
 }
@@ -75,9 +87,12 @@ private:
     bool display[64 * 32];
     uint8_t keypad[16];
     char pixel_char;
+    bool sound_enabled; // 新增：保存声音配置
+    atomic<bool> should_play_sound; // 新增：声音播放标志
+    thread sound_thread; // 新增：声音播放线程
 
 public:
-    Chip8(char pixel) : pixel_char(pixel)
+    Chip8(char pixel, bool snd_enabled) : pixel_char(pixel), sound_enabled(snd_enabled), should_play_sound(false)
     {
         memset(memory, 0, sizeof(memory));
         memset(V, 0, sizeof(V));
@@ -102,6 +117,18 @@ public:
         };
         memcpy(memory, fontset, 80);
         srand((unsigned)time(nullptr));
+
+        // 新增：启动声音播放线程
+        sound_thread = thread([this]() {
+            while (true) {
+                if (should_play_sound && this->sound_enabled) {
+                    Beep(880, 150); // 持续蜂鸣，通过循环实现持续发声
+                } else {
+                    Sleep(50);
+                }
+            }
+        });
+        sound_thread.detach();
     }
 
     bool BootFromROM(const string& file)
@@ -317,8 +344,11 @@ public:
         if (sound_timer > 0)
         {
             sound_timer--;
-            if (sound_timer == 0)
-                CreateThread(nullptr, 0, [](LPVOID) -> DWORD { Beep(880, 50); return 0; }, nullptr, 0, nullptr);
+            should_play_sound = true; // 新增：声音定时器不为0时持续发声
+        }
+        else
+        {
+            should_play_sound = false; // 新增：声音定时器为0时停止发声
         }
     }
 };
@@ -357,13 +387,13 @@ void DrawTopBar(AppState state, bool romLoaded)
     const char* bar = nullptr;
     if (state == AppState::MENU)
     {
-        bar = "[F1] Boot From ROM   [F2] Load Dump   [F3] About   [F4] Exit";
+        bar = "[F1] Load ROM   [F2] Load Dump   [F3] About   [F4] Exit";
     }
     else
     {
-        const char* pauseText = (state == AppState::RUNNING) ? "Stop" : "Start";
+        const char* pauseText = (state == AppState::RUNNING) ? "Stop" : "Resume";
         static string barStr;
-        barStr = "[F1] " + string(pauseText) + "   [F2] Dump   [F3] About   [F4] Exit";
+        barStr = "[F1] " + string(pauseText) + "   [F2] Dump   [F3] About   [F4] Back to Menu"; // 修改：F4改为返回主页面
         bar = barStr.c_str();
     }
 
@@ -400,9 +430,11 @@ void ShowAbout()
     cout << "      D          R\n";
     cout << "      E          F\n";
     cout << "      F          V\n";
-    cout << "\nFunction keys: F1 (Start/Stop), F2 (Dump), F3 (About), F4 (Exit)\n";
+    cout << "\nFunction keys: F1 (Load ROM/Resume/Stop), F2 (Dump), F3 (About), F4 (Back to Menu/Exit)\n";
     cout << "========================================\n";
-    system("pause");
+    cout << "Press any key to continue...";
+    ClearConsoleInputBuffer();
+	cin.get();
     system("cls");
 }
 
@@ -437,7 +469,7 @@ int main()
     SetConsoleCursorInfo(hConsole, &cci);
     system("title ConsoleChip8");
 
-    Chip8 chip(cfg.pixel_char);
+    Chip8 chip(cfg.pixel_char, cfg.sound_enabled); // 修改：传入声音配置
     AppState state = AppState::MENU;
     bool romLoaded = false;
 
@@ -526,11 +558,13 @@ int main()
             }
             else if (curF3 && !lastF3)
             {
+            	ClearConsoleInputBuffer();
                 ShowAbout();
                 DrawTopBar(state, romLoaded);
             }
             else if (curF4 && !lastF4)
             {
+            	ShowConsoleCursor(true);
                 return 0;
             }
             Sleep(50);
@@ -575,13 +609,20 @@ int main()
             }
             else if (curF3 && !lastF3)
             {
+            	ClearConsoleInputBuffer();
                 ShowAbout();
                 DrawTopBar(state, romLoaded);
                 chip.render();
             }
             else if (curF4 && !lastF4)
             {
-                return 0;
+                state = AppState::MENU;
+                romLoaded = false;
+                system("cls");
+                DrawTopBar(state, romLoaded);
+                Sleep(50);
+            	lastF1 = curF1; lastF2 = curF2; lastF3 = curF3; lastF4 = curF4;
+                continue;
             }
 
             // 暂停状态：只刷新 UI 不模拟
