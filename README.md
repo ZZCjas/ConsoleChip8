@@ -113,7 +113,7 @@ sound_enabled = true    # Enable or disable beep sound
 
 - Windows only. 
 - No CHIP‑8‑X or Super‑CHIP extensions.  
-- Sound uses the Buzzer (`Beep`) – may not work on all systems or may be limited.
+- Sound uses the (`Beep`) – may not work on all systems or may be limited.
 
 ## Troubleshooting
 
