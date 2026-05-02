@@ -1,6 +1,6 @@
 # ConsoleChip8
 
-A simple and well‑optimized single file CHIP‑8 emulator that runs directly in the Windows console.
+A well‑optimized single file CHIP‑8 emulator that runs directly in the Windows console.
 
 ![LICENSE](https://camo.githubusercontent.com/382a3e1435f055f27a7b938f9152a25c8358abc88ed4312ade7cad5b237cb11d/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f6c6963656e73652f626974636f6f6b6965732f77696e7261722d6b657967656e2e7376673f6c6f676f3d676974687562)
 
@@ -11,8 +11,14 @@ A simple and well‑optimized single file CHIP‑8 emulator that runs directly i
 - Sound support with on/off toggle  
 - Save / load emulator state (dump files)  
 - On‑screen menu with function key controls  
-- High Performance and low RAM & CPU usage
-- Retro UI
+- High performance and low RAM & CPU requirement
+- Retro console UI
+
+## System Requirements
+
+- Any computer running Windows 2000 or later versions.
+- At least 10KB of RAM
+- A screen which can contain a normal sized console window.
 
 ## Building
 
