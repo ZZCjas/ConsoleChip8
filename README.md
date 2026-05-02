@@ -7,7 +7,7 @@
  ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝╚══════╝ ╚═════╝ ╚══════╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝╚═╝      ╚════╝ 
 ```
 
-This is a well‑optimized single file CHIP‑8 emulator that runs directly in the Windows console created by ZZCjas.
+This is a well‑optimized single file basic CHIP‑8 emulator that runs directly in the Windows console created by ZZCjas.
 
 ![LICENSE](https://camo.githubusercontent.com/382a3e1435f055f27a7b938f9152a25c8358abc88ed4312ade7cad5b237cb11d/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f6c6963656e73652f626974636f6f6b6965732f77696e7261722d6b657967656e2e7376673f6c6f676f3d676974687562)
 ![](https://img.shields.io/badge/C%2B%2B-std%202011%2B-blue?style=round-square\&logo=cplusplus\&logoColor=white)
@@ -109,21 +109,6 @@ sound_enabled = true    # Enable or disable beep sound
 - `frame_ms` – Controls the overall emulation speed.  
 - `pixel_char` – Any printable character (e.g., `@`, `.`, `*`).  
 - `sound_enabled` – Set to `false` to mute the internal Buzzer beep.
-
-## Limitations
-
-- Windows only. 
-- No CHIP‑8‑X or Super‑CHIP extensions.  
-- Sound uses the (`Beep`) – may not work on all systems or may be limited.
-
-## Troubleshooting
-
-| Issue                        | Possible solution                                      |
-|------------------------------|--------------------------------------------------------|
-| Console flickers             | Adjust `frame_ms` (e.g., 16 → 20)                     |
-| No sound                     | Check `sound_enabled = true` in config; ensure Buzzer is not disabled in Windows |
-| ROM doesn't start            | Verify the ROM is a valid CHIP‑8 file (max 3584 bytes) |
-| Keyboard unresponsive        | Make sure the console window is focused                |
 
 ## Contributors
 
