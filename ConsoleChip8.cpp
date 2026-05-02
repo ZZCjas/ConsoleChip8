@@ -463,6 +463,7 @@ public:
 // ---------- Ö÷º¯Êý ----------
 int main()
 {
+	ios::sync_with_stdio(0);
     EmuConfig cfg = loadConfig();
     system("mode con cols=128 lines=34");
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
