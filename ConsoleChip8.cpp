@@ -12,6 +12,9 @@
 #include <limits>
 #include <conio.h>
 #include <intrin.h>
+#include <sstream>
+#include <iomanip>
+#include <set>          // 用于存储断点
 
 using namespace std;
 
@@ -21,7 +24,7 @@ struct EmuConfig
     int ops_per_frame = 10;
     DWORD frame_ms = 16;
     char pixel_char = '#';
-    bool sound_enabled = true; // 新增：声音开关
+    bool sound_enabled = true;
 };
 
 EmuConfig loadConfig(const string& configPath = "chip8.cfg")
@@ -37,10 +40,9 @@ EmuConfig loadConfig(const string& configPath = "chip8.cfg")
             newFile << "ops_per_frame = 10\n";
             newFile << "frame_ms = 16\n";
             newFile << "pixel_char = #\n";
-            newFile << "sound_enabled = true\n"; // 新增：默认声音开启
+            newFile << "sound_enabled = true\n";
             newFile.close();
             cout << "Created default configuration file: " << configPath << endl;
-            // 新增：等待1秒后再显示主页面
             this_thread::sleep_for(chrono::seconds(1));
         }
         return cfg;
@@ -56,7 +58,6 @@ EmuConfig loadConfig(const string& configPath = "chip8.cfg")
             continue;
         string key = line.substr(0, eqPos);
         string value = line.substr(eqPos + 1);
-        // 去除value前后的空格
         size_t start = value.find_first_not_of(" \t");
         size_t end = value.find_last_not_of(" \t");
         if (start != string::npos && end != string::npos)
@@ -68,7 +69,7 @@ EmuConfig loadConfig(const string& configPath = "chip8.cfg")
             cfg.frame_ms = stoi(value);
         else if (key == "pixel_char" && !value.empty())
             cfg.pixel_char = value[0];
-        else if (key == "sound_enabled") // 新增：读取声音配置
+        else if (key == "sound_enabled")
             cfg.sound_enabled = (value == "true" || value == "1" || value == "yes");
     }
     return cfg;
@@ -89,11 +90,14 @@ private:
     bool display[64 * 32];
     uint8_t keypad[16];
     char pixel_char;
-    bool sound_enabled; // 新增：保存声音配置
-    atomic<bool> should_play_sound; // 新增：声音播放标志
-    thread sound_thread; // 新增：声音播放线程
+    bool sound_enabled;
+    atomic<bool> should_play_sound;
+    thread sound_thread;
 
 public:
+    // 断点集合
+    set<uint16_t> breakpoints;
+
     Chip8(char pixel, bool snd_enabled) : pixel_char(pixel), sound_enabled(snd_enabled), should_play_sound(false)
     {
         memset(memory, 0, sizeof(memory));
@@ -120,11 +124,10 @@ public:
         memcpy(memory, fontset, 80);
         srand((unsigned)time(nullptr));
 
-        // 新增：启动声音播放线程
         sound_thread = thread([this]() {
             while (true) {
                 if (should_play_sound && this->sound_enabled) {
-                    Beep(880, 150); // 持续蜂鸣，通过循环实现持续发声
+                    Beep(880, 150);
                 } else {
                     Sleep(50);
                 }
@@ -135,6 +138,8 @@ public:
 
     bool BootFromROM(const string& file)
     {
+        breakpoints.clear();  // 加载新 ROM 时清空断点
+
         ifstream rom(file, ios::binary | ios::ate);
         if (!rom.is_open())
             return false;
@@ -186,6 +191,8 @@ public:
 
     bool LoadDump(const string& file)
     {
+        breakpoints.clear();  // 加载转储时也清空断点
+
         ifstream dump(file, ios::binary);
         if (!dump.is_open())
             return false;
@@ -322,6 +329,7 @@ public:
             WriteConsoleOutputCharacterA(hConsole, lineBuffer, 128, linePos, &charsWritten);
         }
     }
+
     void updateKeyboard()
     {
         const int keyMapping[16] = {
@@ -349,6 +357,68 @@ public:
             should_play_sound = false; 
         }
     }
+
+    // ---------- 调试与辅助函数 ----------
+    uint16_t getPC() const { return pc; }
+    uint16_t getCurrentOpcode() const { return (memory[pc] << 8) | memory[pc + 1]; }
+    bool isBreakpointHit() const { return breakpoints.find(pc) != breakpoints.end(); }
+
+    string toHex(uint16_t val) const
+    {
+        stringstream ss;
+        ss << hex << uppercase << setw(4) << setfill('0') << val;
+        return ss.str();
+    }
+
+    void toggleBreakpoint(uint16_t addr)
+    {
+        if (breakpoints.find(addr) != breakpoints.end())
+        {
+            breakpoints.erase(addr);
+            MessageBoxA(NULL, ("Breakpoint removed at 0x" + toHex(addr)).c_str(), "Breakpoint", MB_OK);
+        }
+        else
+        {
+            breakpoints.insert(addr);
+            MessageBoxA(NULL, ("Breakpoint set at 0x" + toHex(addr)).c_str(), "Breakpoint", MB_OK);
+        }
+    }
+
+    string getRegistersString() const
+    {
+        stringstream ss;
+        ss << "Registers V0-V15:\n";
+        for (int i = 0; i < 16; ++i)
+        {
+            ss << "V" << hex << uppercase << i << ": 0x" << setw(2) << setfill('0') << (int)V[i];
+            if ((i + 1) % 4 == 0) ss << "\n";
+            else ss << "   ";
+        }
+        return ss.str();
+    }
+
+    string getInternalStateString() const
+    {
+        stringstream ss;
+        ss << "I  : 0x" << hex << uppercase << I << "\n";
+        ss << "PC : 0x" << pc << "\n";
+        ss << "SP : 0x" << uppercase << (int)sp << " (stack top index)\n";
+        ss << "Stack (16 words):\n";
+        for (int i = 0; i < 16; ++i)
+        {
+            ss << "[" << dec << i << "] = 0x" << hex << setw(4) << setfill('0') << stack[i];
+            if ((i + 1) % 4 == 0) ss << "\n";
+            else ss << "   ";
+        }
+        ss << "Delay Timer: " << dec << (int)delay_timer << "\n";
+        ss << "Sound Timer: " << (int)sound_timer << "\n";
+        return ss.str();
+    }
+
+    string getAllStateString() const
+    {
+        return getRegistersString() + "\n\n" + getInternalStateString();
+    }
 };
 
 // ---------- UI 菜单栏 ----------
@@ -356,7 +426,8 @@ enum class AppState
 {
     MENU,
     RUNNING,
-    PAUSED
+    PAUSED,
+    DEBUG
 };
 
 void ShowConsoleCursor(bool show)
@@ -373,7 +444,6 @@ void ClearConsoleInputBuffer()
     HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
     FlushConsoleInputBuffer(hStdin);
     cin.clear();
-    //cin.ignore(numeric_limits<streamsize>::max(), '\n');
 }
 
 void DrawTopBar(AppState state, bool romLoaded)
@@ -382,15 +452,16 @@ void DrawTopBar(AppState state, bool romLoaded)
     COORD topLeft = {0, 0};
     DWORD written;
     const char* bar = nullptr;
+    
     if (state == AppState::MENU)
     {
         bar = "[F1] Load ROM   [F2] Load Dump   [F3] About   [F4] Exit";
     }
-    else
+    else   // RUNNING / PAUSED
     {
         const char* pauseText = (state == AppState::RUNNING) ? "Pause" : "Resume";
         static string barStr;
-        barStr = "[F1] " + string(pauseText) + "   [F2] Dump   [F3] About   [F4] Back to Menu"; // 修改：F4改为返回主页面
+        barStr = "[F1] " + string(pauseText) + "   [F2] Dump   [F3] About   [F4] Back to Menu   [F5] Debug";
         bar = barStr.c_str();
     }
 
@@ -399,6 +470,27 @@ void DrawTopBar(AppState state, bool romLoaded)
     line[127] = '\0';
     WriteConsoleOutputCharacterA(hConsole, line, 127, topLeft, &written);
     WriteConsoleOutputCharacterA(hConsole, bar, strlen(bar), topLeft, &written);
+}
+
+void DrawDebugTopBar(Chip8& chip)
+{
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    COORD topLeft = {0, 0};
+    DWORD written;
+    
+    uint16_t pc = chip.getPC();
+    uint16_t opcode = chip.getCurrentOpcode();
+    
+    char buffer[256];
+    snprintf(buffer, sizeof(buffer),
+             "PC: 0x%04X  Opcode: 0x%04X   [F1] Step   [F2] Show Full State   [F3] Breakpoint   [F4] Exit Debug",
+             pc, opcode);
+    
+    char clearLine[128];
+    memset(clearLine, ' ', 127);
+    clearLine[127] = '\0';
+    WriteConsoleOutputCharacterA(hConsole, clearLine, 127, topLeft, &written);
+    WriteConsoleOutputCharacterA(hConsole, buffer, strlen(buffer), topLeft, &written);
 }
 
 void ShowAbout()
@@ -438,6 +530,7 @@ void ShowAbout()
     _getch();
     system("cls");
 }
+
 class PreciseTimer
 {
 private:
@@ -457,14 +550,9 @@ public:
         while (elapsedSeconds() < targetSeconds) Sleep(1);
     }
 };
-PreciseTimer frameTimer;
-bool romLoaded = false;
-const int keyF1 = VK_F1, keyF2 = VK_F2, keyF3 = VK_F3, keyF4 = VK_F4;// 上升沿检测上次状态
-bool lastF1 = false, lastF2 = false, lastF3 = false, lastF4 = false;
-bool forbidden[256] = {false};
+
 int main()
 {
-	//ios::sync_with_stdio(0);
     EmuConfig cfg = loadConfig();
     system("mode con cols=128 lines=34");
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -473,20 +561,25 @@ int main()
     system("title ConsoleChip8");
     Chip8 chip(cfg.pixel_char, cfg.sound_enabled);
     AppState state = AppState::MENU;
-    forbidden[keyF1] = 1;
-    forbidden[keyF2] = 1;
-    forbidden[keyF3] = 1;
-    forbidden[keyF4] = 1;
+    
+    const int keyF1 = VK_F1, keyF2 = VK_F2, keyF3 = VK_F3, keyF4 = VK_F4, keyF5 = VK_F5;
+    bool lastF1 = false, lastF2 = false, lastF3 = false, lastF4 = false, lastF5 = false;
     const double FRAME_SEC = cfg.frame_ms / 1000.0;
+    PreciseTimer frameTimer;
     DWORD lastTimerTick = GetTickCount();
+    bool romLoaded = false;
+    
     system("cls");
     DrawTopBar(state, romLoaded);
-    while(1)
+    
+    while (1)
     {
         bool curF1 = (GetAsyncKeyState(keyF1) & 0x8000) != 0;
         bool curF2 = (GetAsyncKeyState(keyF2) & 0x8000) != 0;
         bool curF3 = (GetAsyncKeyState(keyF3) & 0x8000) != 0;
         bool curF4 = (GetAsyncKeyState(keyF4) & 0x8000) != 0;
+        bool curF5 = (GetAsyncKeyState(keyF5) & 0x8000) != 0;
+        
         // ---------- 菜单状态 ----------
         if (state == AppState::MENU)
         {
@@ -518,7 +611,7 @@ int main()
                 }
             }
             else if (curF2 && !lastF2)
-            { 
+            {
                 ClearConsoleInputBuffer();
                 ShowConsoleCursor(true);
                 system("cls");
@@ -546,23 +639,23 @@ int main()
             }
             else if (curF3 && !lastF3)
             {
-            	ClearConsoleInputBuffer();
+                ClearConsoleInputBuffer();
                 ShowAbout();
                 DrawTopBar(state, romLoaded);
             }
             else if (curF4 && !lastF4)
             {
-            	ShowConsoleCursor(true);
+                ShowConsoleCursor(true);
                 return 0;
             }
             Sleep(50);
-            lastF1 = curF1; lastF2 = curF2; lastF3 = curF3; lastF4 = curF4;
+            lastF1 = curF1; lastF2 = curF2; lastF3 = curF3; lastF4 = curF4; lastF5 = curF5;
             continue;
         }
-        // ---------- 运行或暂停状态 (romLoaded == true) ----------
+        
+        // ---------- 运行或暂停状态 ----------
         if (state == AppState::RUNNING || state == AppState::PAUSED)
         {
-            // 功能键处理（上升沿）
             if (curF1 && !lastF1)
             {
                 if (state == AppState::RUNNING)
@@ -573,7 +666,7 @@ int main()
                 frameTimer.reset();
                 lastTimerTick = GetTickCount();
                 if (state == AppState::RUNNING)
-                    chip.render();   // 恢复时刷新画面
+                    chip.render();
             }
             else if (curF2 && !lastF2)
             {
@@ -596,7 +689,7 @@ int main()
             }
             else if (curF3 && !lastF3)
             {
-            	ClearConsoleInputBuffer();
+                ClearConsoleInputBuffer();
                 ShowAbout();
                 DrawTopBar(state, romLoaded);
                 chip.render();
@@ -604,42 +697,118 @@ int main()
             else if (curF4 && !lastF4)
             {
                 state = AppState::MENU;
+                chip.breakpoints.clear();   // 返回主菜单时清空断点
                 romLoaded = false;
                 system("cls");
                 DrawTopBar(state, romLoaded);
                 Sleep(50);
-            	lastF1 = curF1; lastF2 = curF2; lastF3 = curF3; lastF4 = curF4;
+                lastF1 = curF1; lastF2 = curF2; lastF3 = curF3; lastF4 = curF4; lastF5 = curF5;
                 continue;
             }
+            else if (curF5 && !lastF5 && (state == AppState::RUNNING || state == AppState::PAUSED))
+            {
+                // 从运行或暂停状态进入调试模式
+                state = AppState::DEBUG;
+                system("cls");
+                DrawDebugTopBar(chip);
+                chip.render();
+            }
+            
             // 暂停状态：只刷新 UI 不模拟
             if (state == AppState::PAUSED)
             {
                 Sleep(20);
-                lastF1 = curF1; lastF2 = curF2; lastF3 = curF3; lastF4 = curF4;
+                lastF1 = curF1; lastF2 = curF2; lastF3 = curF3; lastF4 = curF4; lastF5 = curF5;
                 continue;
             }
-            // 模拟一帧
-            double frameStart = frameTimer.elapsedSeconds();
-            for (int i = 0; i < cfg.ops_per_frame; ++i)
-                chip.emulateCycle();
-            chip.updateKeyboard();
-            DWORD now = GetTickCount();
-            if (now - lastTimerTick >= cfg.frame_ms)
+            
+            // 运行状态：模拟一帧
+            if (state == AppState::RUNNING)
             {
-                chip.updateTimers();
-                lastTimerTick = now;
-            }
-            chip.render();
-            double elapsed = frameTimer.elapsedSeconds() - frameStart;
-            double remaining = FRAME_SEC - elapsed;
-            if (remaining > 0.001)
-            {
-                Sleep(static_cast<DWORD>(remaining * 1000 * 0.9));
-                while (frameTimer.elapsedSeconds() - frameStart < FRAME_SEC)
-                    YieldProcessor();
+                double frameStart = frameTimer.elapsedSeconds();
+                for (int i = 0; i < cfg.ops_per_frame; ++i)
+                {
+                    chip.emulateCycle();
+                    // 每执行完一条指令，检查是否命中断点
+                    if (chip.isBreakpointHit())
+                    {
+                        state = AppState::DEBUG;
+                        system("cls");
+                        DrawDebugTopBar(chip);
+                        chip.render();
+                        string msg = "Breakpoint hit at 0x" + chip.toHex(chip.getPC());
+                        MessageBoxA(NULL, msg.c_str(), "Debugger", MB_OK | MB_ICONINFORMATION);
+                        chip.render();
+                        DrawDebugTopBar(chip);
+                        break;   // 跳出循环，不再执行本帧剩余指令
+                    }
+                }
+                chip.updateKeyboard();
+                DWORD now = GetTickCount();
+                if (now - lastTimerTick >= cfg.frame_ms)
+                {
+                    chip.updateTimers();
+                    lastTimerTick = now;
+                }
+                chip.render();
+                double elapsed = frameTimer.elapsedSeconds() - frameStart;
+                double remaining = FRAME_SEC - elapsed;
+                if (remaining > 0.001)
+                {
+                    Sleep(static_cast<DWORD>(remaining * 1000 * 0.9));
+                    while (frameTimer.elapsedSeconds() - frameStart < FRAME_SEC)
+                        YieldProcessor();
+                }
             }
         }
-        lastF1 = curF1; lastF2 = curF2; lastF3 = curF3; lastF4 = curF4;
+        
+        // ---------- 调试状态 ----------
+        else if (state == AppState::DEBUG)
+        {
+            if (curF1 && !lastF1)
+            {
+                chip.emulateCycle();
+                chip.updateKeyboard();
+                chip.render();
+                DrawDebugTopBar(chip);
+            }
+            else if (curF2 && !lastF2)
+            {
+                string msg = chip.getAllStateString();
+                MessageBoxA(NULL, msg.c_str(), "CHIP-8 Full State", MB_OK | MB_ICONINFORMATION);
+                chip.render();
+                DrawDebugTopBar(chip);
+            }
+            else if (curF3 && !lastF3)
+            {
+                chip.toggleBreakpoint(chip.getPC());
+                chip.render();
+                DrawDebugTopBar(chip);
+            }
+            else if (curF4 && !lastF4)
+			{
+			    // 如果当前 PC 有断点，则临时移除该断点，执行一条指令，然后重新添加断点
+			    uint16_t current_pc = chip.getPC();
+			    bool had_breakpoint = (chip.breakpoints.find(current_pc) != chip.breakpoints.end());
+			    if (had_breakpoint)
+			    {
+			        chip.breakpoints.erase(current_pc);   // 临时移除
+			        chip.emulateCycle();                  // 单步执行，越过当前地址
+			        chip.breakpoints.insert(current_pc);  // 恢复断点（现在 PC 已指向下一条指令）
+			        chip.render();
+			        DrawDebugTopBar(chip);
+			    }
+			    // 退出调试模式，恢复全速运行
+			    state = AppState::RUNNING;
+			    system("cls");
+			    DrawTopBar(state, romLoaded);
+			    frameTimer.reset();
+			    lastTimerTick = GetTickCount();
+			    chip.render();
+			}
+            Sleep(20);
+        }
+        lastF1 = curF1; lastF2 = curF2; lastF3 = curF3; lastF4 = curF4; lastF5 = curF5;
     }
     return 0;
 }
