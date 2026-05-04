@@ -28,17 +28,18 @@ Designed for both retro gaming and **emulator development learning**, it include
 ### 🎮 Core Emulation
 - Full implementation of the **original CHIP-8 instruction set**
 - Single-file, <1MB executable, **zero dependencies**
-- Native Windows console rendering with **stable 60FPS & no flickering**
+- Native Windows console rendering with **almost no flickering**
 - Configurable emulation speed & frame timing
 - Buzzer sound support with toggle
 - Save / load emulator state (dump files)
 - Persistent configuration file
 - Low CPU & RAM usage (≈1MB RAM required)
 
-### 🔬 Built-in Debugger (Unique Feature)
+### 🔬 Built-in Debugger
 - One-key debug mode entry (F5)
 - **Step-by-step instruction execution**
 - View full register state (V0–V15, I, PC, SP, stack, timers)
+- **Memory Viewer**
 - **Breakpoint system** (toggle at current PC)
 - Auto-pause when breakpoint hit
 - Real-time PC & opcode display
@@ -48,7 +49,6 @@ Designed for both retro gaming and **emulator development learning**, it include
 - On-screen function-key menu
 - Clear keyboard mapping
 - Retro terminal-style UI
-- Works on Windows 2000 and later
 
 ---
 
@@ -86,6 +86,7 @@ While running, press `F5` to enter debug mode and inspect CHIP-8 behavior step b
 - `F2` – Show full emulator state
 - `F3` – Toggle breakpoint at current PC
 - `F4` – Exit debug mode
+- `F5` – Show Memory Viewer
 
 ---
 
