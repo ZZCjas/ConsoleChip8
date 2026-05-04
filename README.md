@@ -34,6 +34,7 @@ Designed for both retro gaming and **emulator development learning**, it include
 - Save / load emulator state (dump files)
 - Persistent configuration file
 - Low CPU & RAM usage (≈1MB RAM required)
+- ![Running TETRIS.ch8](https://cdn.luogu.com.cn/upload/image_hosting/mznez8bt.png)
 
 ### 🔬 Built-in Debugger
 - One-key debug mode entry (F5)
@@ -44,6 +45,8 @@ Designed for both retro gaming and **emulator development learning**, it include
 - Auto-pause when breakpoint hit
 - Real-time PC & opcode display
 - Seamless switch between run/debug modes
+- ![Debugger Menu](https://cdn.luogu.com.cn/upload/image_hosting/48cwwoie.png)
+- ![Memory Viewer](https://cdn.luogu.com.cn/upload/image_hosting/ngblvant.png)
 
 ### 🎯 Usability
 - On-screen function-key menu
@@ -59,7 +62,7 @@ Double-click `ConsoleChip8.exe` to launch.
 
 ### 2. Load a ROM
 - Press `F1` in the main menu
-- Enter the path to your `.ch8` ROM file
+- Enter the path to your CHIP8 ROM file
 - Emulation starts automatically
 
 ### 3. Debug Mode (For Learning)
