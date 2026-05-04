@@ -423,61 +423,144 @@ void showMemoryViewer(Chip8& chip)
 {
     const int ADDR_START = 0x0000;
     const int ADDR_END   = 0x1000;   // 4096 bytes
-    const int BYTES_PER_LINE = 2;
-    const int TOTAL_LINES = (ADDR_END - ADDR_START + BYTES_PER_LINE - 1) / BYTES_PER_LINE; // 256
+    const int BYTES_PER_LINE = 2;    // 每行显示2个字节
+    const int TOTAL_LINES = (ADDR_END - ADDR_START + BYTES_PER_LINE - 1) / BYTES_PER_LINE; // 2048? 不对，2048*2=4096，正确：2048行
     const int VIEW_HEIGHT = 29;      // 一次显示的行数
+
     uint16_t pc = chip.getPC();
     int current_line = pc / BYTES_PER_LINE;
-    int scroll_line = current_line - VIEW_HEIGHT / 2;
+    
+    // 当前选中的地址（初始为 PC）
+    uint16_t selected_addr = pc;
+    int selected_line = selected_addr / BYTES_PER_LINE;
+    int selected_col = selected_addr % BYTES_PER_LINE;   // 0 或 1
+    
+    // 滚动偏移量，使选中行居中
+    int scroll_line = selected_line - VIEW_HEIGHT / 2;
     if (scroll_line < 0) scroll_line = 0;
     if (scroll_line > TOTAL_LINES - VIEW_HEIGHT) scroll_line = TOTAL_LINES - VIEW_HEIGHT;
     if (scroll_line < 0) scroll_line = 0;
+
     bool exit_viewer = false;
     system("cls");
+    
     while (!exit_viewer)
     {
         HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
         COORD pos = {0, 0};
         SetConsoleCursorPosition(hConsole, pos);
-        cout << "! : breakpoint    < : current PC\n";
-        cout << "PC = 0x" << hex << uppercase << pc << "   [UP/DOWN] Scroll   [ESC/F5] Exit\n\n";
+        
+        // 第一行：图例
+        cout << "! : breakpoint    < : current PC    +/- : cursor\n";
+        // 第二行：状态信息
+        cout << "PC = 0x" << hex << uppercase << pc 
+             << "   Selected: 0x" << selected_addr
+             << "   [UP/DOWN] Scroll & Move   [LEFT/RIGHT] Move   [Space] toggle breakpoint   [ESC/F5] Exit\n\n";
+        
+        // 打印内存区域
         for (int line = scroll_line; line < scroll_line + VIEW_HEIGHT && line < TOTAL_LINES; ++line)
         {
             int base = line * BYTES_PER_LINE;
             cout << hex << uppercase << setw(4) << setfill('0') << base << ": ";
-            for (int i = 0; i < BYTES_PER_LINE; i++)
+            
+            for (int col = 0; col < BYTES_PER_LINE; ++col)
             {
-                int addr = base + i; 
+                int addr = base + col;
                 if (addr >= ADDR_END) break;
                 uint8_t byte = chip.readMemory(addr);
+                
+                // 输出字节值（两位十六进制）
                 cout << setw(2) << setfill('0') << (int)byte << " ";
-                bool is_pc = (addr == pc);
+                
+                // 断点标记（固定宽度2字符，左对齐）
                 bool is_bp = (chip.breakpoints.find(addr) != chip.breakpoints.end());
-                string mark = " ";
-                if (is_pc && is_bp) mark = "!<";
-                else if (is_pc) mark = "<";
-                else if (is_bp) mark = "!";
-                cout << mark << ' ';
+                string bp_mark = is_bp ? "!" : " ";
+                bool is_pc = (addr == pc);
+                string pc_mark = is_pc ? "<" : " ";
+                bool is_cursor = (addr == selected_addr);
+				string cursor_mark = is_cursor ? ((is_bp?"-":"+")) : " ";
+                cout << bp_mark << pc_mark << cursor_mark << " ";
             }
-            cout << '\n';
+            cout << "\n";
         }
+        // 按键处理
         int key = _getch();
-        if (key == 0xE0)
+        if (key == 0xE0)  // 扩展键（方向键）
         {
             key = _getch();
-            if (key == 0x48) // 上
+            if (key == 0x48) // 上键
             {
-                if (scroll_line > 0) scroll_line--;
+                if (selected_addr >= BYTES_PER_LINE) {
+                    selected_addr -= BYTES_PER_LINE;
+                }
+                // 更新行列
+                selected_line = selected_addr / BYTES_PER_LINE;
+                selected_col = selected_addr % BYTES_PER_LINE;
+                // 调整滚动
+                if (selected_line < scroll_line) {
+                    scroll_line = selected_line;
+                } else if (selected_line >= scroll_line + VIEW_HEIGHT) {
+                    scroll_line = selected_line - VIEW_HEIGHT + 1;
+                }
+                if (scroll_line < 0) scroll_line = 0;
+                if (scroll_line > TOTAL_LINES - VIEW_HEIGHT) scroll_line = TOTAL_LINES - VIEW_HEIGHT;
             }
-            else if (key == 0x50) // 下
+            else if (key == 0x50) // 下键
             {
-                if (scroll_line < TOTAL_LINES - VIEW_HEIGHT) scroll_line++;
+                if (selected_addr + BYTES_PER_LINE < ADDR_END) {
+                    selected_addr += BYTES_PER_LINE;
+                }
+                selected_line = selected_addr / BYTES_PER_LINE;
+                selected_col = selected_addr % BYTES_PER_LINE;
+                if (selected_line < scroll_line) {
+                    scroll_line = selected_line;
+                } else if (selected_line >= scroll_line + VIEW_HEIGHT) {
+                    scroll_line = selected_line - VIEW_HEIGHT + 1;
+                }
+                if (scroll_line < 0) scroll_line = 0;
+                if (scroll_line > TOTAL_LINES - VIEW_HEIGHT) scroll_line = TOTAL_LINES - VIEW_HEIGHT;
             }
+            else if (key == 0x4B) // 左键
+            {
+                if (selected_col > 0) {
+                    selected_addr--;
+                    selected_line = selected_addr / BYTES_PER_LINE;
+                    selected_col = selected_addr % BYTES_PER_LINE;
+                    // 确保选中行在可视范围内
+                    if (selected_line < scroll_line) {
+                        scroll_line = selected_line;
+                    } else if (selected_line >= scroll_line + VIEW_HEIGHT) {
+                        scroll_line = selected_line - VIEW_HEIGHT + 1;
+                    }
+                }
+            }
+            else if (key == 0x4D) // 右键
+            {
+                if (selected_col < BYTES_PER_LINE - 1 && selected_addr + 1 < ADDR_END) {
+                    selected_addr++;
+                    selected_line = selected_addr / BYTES_PER_LINE;
+                    selected_col = selected_addr % BYTES_PER_LINE;
+                    if (selected_line < scroll_line) {
+                        scroll_line = selected_line;
+                    } else if (selected_line >= scroll_line + VIEW_HEIGHT) {
+                        scroll_line = selected_line - VIEW_HEIGHT + 1;
+                    }
+                }
+            }
+        }
+        else if (key == ' ') // 空格键：切换断点
+        {
+            chip.toggleBreakpoint(selected_addr);
+            // 刷新显示
         }
         else if (key == 27 || key == VK_F5) // ESC 或 F5 退出
         {
             exit_viewer = true;
         }
+        // 确保滚动边界有效
+        if (scroll_line < 0) scroll_line = 0;
+        if (scroll_line > TOTAL_LINES - VIEW_HEIGHT) scroll_line = TOTAL_LINES - VIEW_HEIGHT;
+        if (scroll_line < 0) scroll_line = 0;
     }
 }
 void ShowConsoleCursor(bool show)
