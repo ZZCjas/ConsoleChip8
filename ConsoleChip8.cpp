@@ -14,11 +14,8 @@
 #include <intrin.h>
 #include <sstream>
 #include <iomanip>
-#include <set>          // 用于存储断点
-
+#include <set>
 using namespace std;
-
-// ---------- 全局配置 ----------
 struct EmuConfig
 {
     int ops_per_frame = 10;
@@ -26,7 +23,6 @@ struct EmuConfig
     char pixel_char = '#';
     bool sound_enabled = true;
 };
-
 EmuConfig loadConfig(const string& configPath = "chip8.cfg")
 {
     EmuConfig cfg;
@@ -47,7 +43,6 @@ EmuConfig loadConfig(const string& configPath = "chip8.cfg")
         }
         return cfg;
     }
-
     string line;
     while (getline(file, line))
     {
@@ -62,7 +57,6 @@ EmuConfig loadConfig(const string& configPath = "chip8.cfg")
         size_t end = value.find_last_not_of(" \t");
         if (start != string::npos && end != string::npos)
             value = value.substr(start, end - start + 1);
-        
         if (key == "ops_per_frame")
             cfg.ops_per_frame = stoi(value);
         else if (key == "frame_ms")
@@ -74,8 +68,6 @@ EmuConfig loadConfig(const string& configPath = "chip8.cfg")
     }
     return cfg;
 }
-
-// ---------- Chip8 模拟器核心 ----------
 class Chip8
 {
 private:
@@ -95,9 +87,8 @@ private:
     thread sound_thread;
 
 public:
-    // 断点集合
     set<uint16_t> breakpoints;
-
+	uint8_t readMemory(uint16_t addr) const { return memory[addr]; }
     Chip8(char pixel, bool snd_enabled) : pixel_char(pixel), sound_enabled(snd_enabled), should_play_sound(false)
     {
         memset(memory, 0, sizeof(memory));
@@ -110,7 +101,6 @@ public:
         sound_timer = 0;
         memset(display, 0, sizeof(display));
         memset(keypad, 0, sizeof(keypad));
-
         const uint8_t fontset[80] = {
             0xF0, 0x90, 0x90, 0x90, 0xF0, 0x20, 0x60, 0x20, 0x20, 0x70,
             0xF0, 0x10, 0xF0, 0x80, 0xF0, 0xF0, 0x10, 0xF0, 0x10, 0xF0,
@@ -429,7 +419,67 @@ enum class AppState
     PAUSED,
     DEBUG
 };
-
+void showMemoryViewer(Chip8& chip)
+{
+    const int ADDR_START = 0x0000;
+    const int ADDR_END   = 0x1000;   // 4096 bytes
+    const int BYTES_PER_LINE = 2;
+    const int TOTAL_LINES = (ADDR_END - ADDR_START + BYTES_PER_LINE - 1) / BYTES_PER_LINE; // 256
+    const int VIEW_HEIGHT = 29;      // 一次显示的行数
+    uint16_t pc = chip.getPC();
+    int current_line = pc / BYTES_PER_LINE;
+    int scroll_line = current_line - VIEW_HEIGHT / 2;
+    if (scroll_line < 0) scroll_line = 0;
+    if (scroll_line > TOTAL_LINES - VIEW_HEIGHT) scroll_line = TOTAL_LINES - VIEW_HEIGHT;
+    if (scroll_line < 0) scroll_line = 0;
+    bool exit_viewer = false;
+    system("cls");
+    while (!exit_viewer)
+    {
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        COORD pos = {0, 0};
+        SetConsoleCursorPosition(hConsole, pos);
+        cout << "! : breakpoint    < : current PC\n";
+        cout << "PC = 0x" << hex << uppercase << pc << "   [UP/DOWN] Scroll   [ESC/F5] Exit\n\n";
+        for (int line = scroll_line; line < scroll_line + VIEW_HEIGHT && line < TOTAL_LINES; ++line)
+        {
+            int base = line * BYTES_PER_LINE;
+            cout << hex << uppercase << setw(4) << setfill('0') << base << ": ";
+            for (int i = 0; i < BYTES_PER_LINE; i++)
+            {
+                int addr = base + i; 
+                if (addr >= ADDR_END) break;
+                uint8_t byte = chip.readMemory(addr);
+                cout << setw(2) << setfill('0') << (int)byte << " ";
+                bool is_pc = (addr == pc);
+                bool is_bp = (chip.breakpoints.find(addr) != chip.breakpoints.end());
+                string mark = " ";
+                if (is_pc && is_bp) mark = "!<";
+                else if (is_pc) mark = "<";
+                else if (is_bp) mark = "!";
+                cout << mark << ' ';
+            }
+            cout << '\n';
+        }
+        int key = _getch();
+        if (key == 0xE0)
+        {
+            key = _getch();
+            if (key == 0x48) // 上
+            {
+                if (scroll_line > 0) scroll_line--;
+            }
+            else if (key == 0x50) // 下
+            {
+                if (scroll_line < TOTAL_LINES - VIEW_HEIGHT) scroll_line++;
+            }
+        }
+        else if (key == 27 || key == VK_F5) // ESC 或 F5 退出
+        {
+            exit_viewer = true;
+        }
+    }
+}
 void ShowConsoleCursor(bool show)
 {
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -483,7 +533,7 @@ void DrawDebugTopBar(Chip8& chip)
     
     char buffer[256];
     snprintf(buffer, sizeof(buffer),
-             "PC: 0x%04X  Opcode: 0x%04X   [F1] Step   [F2] Show Full State   [F3] Breakpoint   [F4] Exit Debug",
+             "PC: 0x%04X  Opcode: 0x%04X   [F1] Step   [F2] Show Full State   [F3] Breakpoint   [F4] Exit Debug   [F5] Show Memory Viewer", 
              pc, opcode);
     
     char clearLine[128];
@@ -804,6 +854,14 @@ int main()
 			    DrawTopBar(state, romLoaded);
 			    frameTimer.reset();
 			    lastTimerTick = GetTickCount();
+			    chip.render();
+			}
+			else if (curF5 && !lastF5)
+			{
+			    showMemoryViewer(chip);
+			    // 返回后刷新调试界面
+			    system("cls");
+			    DrawDebugTopBar(chip);
 			    chip.render();
 			}
             Sleep(20);
