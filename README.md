@@ -112,7 +112,7 @@ Requires: Windows + C++11 compiler (MinGW‑w64 or MSVC)
 
 ### MinGW
 ```bash
-g++ ConsoleChip8.cpp -o ConsoleChip8.exe -std=c++11 -O2
+g++ ConsoleChip8.cpp -o ConsoleChip8.exe
 ```
 
 ### MSVC
