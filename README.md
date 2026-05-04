@@ -1,3 +1,12 @@
+# ConsoleChip8
+
+**A single-file, zero-dependency CHIP-8 emulator for Windows Console with built-in debugger**
+
+[![GitHub Stars](https://img.shields.io/github/stars/ZZCjas/ConsoleChip8)](https://github.com/ZZCjas/ConsoleChip8/stargazers)
+[![License](https://img.shields.io/github/license/ZZCjas/ConsoleChip8)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Windows-blue)](https://github.com/ZZCjas/ConsoleChip8)
+[![Language](https://img.shields.io/badge/Language-C++11-orange)](https://github.com/ZZCjas/ConsoleChip8)
+
 ```
  ██████╗ ██████╗ ███╗   ██╗███████╗ ██████╗ ██╗     ███████╗ ██████╗██╗  ██╗██╗██████╗  █████╗ 
 ██╔════╝██╔═══██╗████╗  ██║██╔════╝██╔═══██╗██║     ██╔════╝██╔════╝██║  ██║██║██╔══██╗██╔══██╗
@@ -7,113 +16,123 @@
  ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝╚══════╝ ╚═════╝ ╚══════╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝╚═╝      ╚════╝ 
 ```
 
-This is a well‑optimized single file basic CHIP‑8 emulator that runs directly in the Windows console created by ZZCjas.
+## Overview
+ConsoleChip8 is a lightweight, **pure C++ CHIP-8 emulator** that runs natively in the Windows Console.
+It requires **no external libraries, no runtimes, and no complicated setup**—just download and run.
 
-![LICENSE](https://camo.githubusercontent.com/382a3e1435f055f27a7b938f9152a25c8358abc88ed4312ade7cad5b237cb11d/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f6c6963656e73652f626974636f6f6b6965732f77696e7261722d6b657967656e2e7376673f6c6f676f3d676974687562)
-![](https://img.shields.io/badge/C%2B%2B-std%202011%2B-blue?style=round-square\&logo=cplusplus\&logoColor=white)
+Designed for both retro gaming and **emulator development learning**, it includes a **full-featured built-in debugger** for studying CHIP-8 opcodes and system behavior.
+
+---
 
 ## Features
+### 🎮 Core Emulation
+- Full implementation of the **original CHIP-8 instruction set**
+- Single-file, <1MB executable, **zero dependencies**
+- Native Windows console rendering with **stable 60FPS & no flickering**
+- Configurable emulation speed & frame timing
+- Buzzer sound support with toggle
+- Save / load emulator state (dump files)
+- Persistent configuration file
+- Low CPU & RAM usage (≈1MB RAM required)
 
-- Full CHIP‑8 instruction set implementation  
-- Configurable emulation speed (ops per frame, frame time)  
-- Sound support with on/off toggle  
-- Save / load emulator state (dump files)  
-- On‑screen menu with function key controls  
-- High performance and low RAM & CPU requirement
-- Retro console UI
+### 🔬 Built-in Debugger (Unique Feature)
+- One-key debug mode entry (F5)
+- **Step-by-step instruction execution**
+- View full register state (V0–V15, I, PC, SP, stack, timers)
+- **Breakpoint system** (toggle at current PC)
+- Auto-pause when breakpoint hit
+- Real-time PC & opcode display
+- Seamless switch between run/debug modes
 
-## System Requirements
+### 🎯 Usability
+- On-screen function-key menu
+- Clear keyboard mapping
+- Retro terminal-style UI
+- Works on Windows 2000 and later
 
-- Any computer running Windows 2000 or later versions.
-- At least 0.5~1MB of RAM
-- A screen which can contain a normal sized console window.
+---
 
-## Building
+## Quick Start
+### 1. Download & Run
+Go to [Releases](https://github.com/ZZCjas/ConsoleChip8/releases) and download the prebuilt executable.
+Double-click `ConsoleChip8.exe` to launch.
 
-### Requirements
+### 2. Load a ROM
+- Press `F1` in the main menu
+- Enter the path to your `.ch8` ROM file
+- Emulation starts automatically
 
-- Windows OS  
-- [MinGW‑w64](https://www.mingw-w64.org/) (or any C++11 compiler that supports Windows API)  
+### 3. Debug Mode (For Learning)
+While running, press `F5` to enter debug mode and inspect CHIP-8 behavior step by step.
 
-### Compile with MinGW
+---
 
+## Keyboard Shortcuts
+### Menu Mode
+- `F1` – Load ROM
+- `F2` – Load state dump
+- `F3` – About & keymap
+- `F4` – Exit
+
+### Run / Pause Mode
+- `F1` – Pause / Resume
+- `F2` – Save state dump
+- `F3` – About & keymap
+- `F4` – Return to menu
+- `F5` – Enter debug mode
+
+### Debug Mode
+- `F1` – Step one instruction
+- `F2` – Show full emulator state
+- `F3` – Toggle breakpoint at current PC
+- `F4` – Exit debug mode
+
+---
+
+## Keypad Mapping (CHIP‑8 → PC)
+| CHIP-8 | PC Key | CHIP-8 | PC Key |
+|--------|--------|--------|--------|
+| 0      | X      | 8      | S      |
+| 1      | 1      | 9      | D      |
+| 2      | 2      | A      | Z      |
+| 3      | 3      | B      | C      |
+| 4      | Q      | C      | 4      |
+| 5      | W      | D      | R      |
+| 6      | E      | E      | F      |
+| 7      | A      | F      | V      |
+
+---
+
+## Build from Source
+Requires: Windows + C++11 compiler (MinGW‑w64 or MSVC)
+
+### MinGW
 ```bash
-g++ -o ConsoleChip8.exe ConsoleChip8.cpp
+g++ ConsoleChip8.cpp -o ConsoleChip8.exe -std=c++11 -O2
 ```
 
-### Compile with MSVC
-
+### MSVC
 ```bash
 cl ConsoleChip8.cpp /Fe:ConsoleChip8.exe
 ```
 
-## Usage
-
-1. Launch `ConsoleChip8.exe`  
-2. Use the **menu bar** at the top of the console:
-
-| Key | Menu mode                          | Run / Pause mode                    |
-|-----|------------------------------------|-------------------------------------|
-| F1  | Load ROM (.ch8)                    | Pause / Resume emulation             |
-| F2  | Load dump state                    | Save current state as dump          |
-| F3  | Show about / keyboard map          | Show about / keyboard map           |
-| F4  | Exit                               | Return to main menu                 |
-
-### Running a Game / ROM
-
-- Press **F1** in the main menu, then enter the path to a CHIP‑8 ROM file (usually `.ch8`).  
-- The emulator will start immediately.  
-- Press **F1** again to pause/resume.
-
-### Saving / Loading State
-
-- While emulating, press **F2** to save the entire emulator state (CPU registers, memory, display) to a binary dump file.  
-- From the main menu, press **F2** to load a previously saved dump and continue where you left off.
-
-## Keyboard Mapping
-
-CHIP‑8 uses a 16‑key hex keypad. The default mapping to a PC keyboard is:
-
-| CHIP‑8 | PC Key |
-|--------|--------|
-| 0      | X      |
-| 1      | 1      |
-| 2      | 2      |
-| 3      | 3      |
-| 4      | Q      |
-| 5      | W      |
-| 6      | E      |
-| 7      | A      |
-| 8      | S      |
-| 9      | D      |
-| A      | Z      |
-| B      | C      |
-| C      | 4      |
-| D      | R      |
-| E      | F      |
-| F      | V      |
+---
 
 ## Configuration
-
-On first run, the emulator creates a `chip8.cfg` file in the same directory. You can edit it to change:
-
-```ini
-# CHIP8 Emulator Configuration File
-ops_per_frame = 10      # Number of CHIP‑8 instructions per frame
-frame_ms = 16           # Frame duration in milliseconds (~60 FPS)
-pixel_char = #          # Character used to draw filled pixels
-sound_enabled = true    # Enable or disable beep sound
-```
-
-- `ops_per_frame` – Increase for faster execution, decrease for slower.  
-- `frame_ms` – Controls the overall emulation speed.  
-- `pixel_char` – Any printable character (e.g., `@`, `.`, `*`).  
-- `sound_enabled` – Set to `false` to mute the internal Buzzer beep.
-
-## Contributors
-
-![](https://contrib.rocks/image?repo=ZZCjas/ConsoleChip8)
+A `chip8.cfg` file is auto-generated on first run. You can customize:
+- `ops_per_frame` – Instructions executed per frame
+- `frame_ms` – Frame duration (controls speed)
+- `pixel_char` – Character used for pixels
+- `sound_enabled` – Toggle buzzer sound
 
 ---
 
-Enjoy retrogaming on your terminal! 🕹️
+## License
+MIT License. Free for personal, educational, and commercial use.
+
+---
+
+## Support
+If this project helps you learn CHIP-8 or emulator development, please **star ⭐** the repository to support it!
+
+---
