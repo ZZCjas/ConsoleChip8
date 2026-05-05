@@ -46,7 +46,7 @@ Designed for both retro gaming and **emulator development learning**, it include
 - Real-time PC & opcode display
 - Seamless switch between run/debug modes
 - ![Debugger Menu](https://cdn.luogu.com.cn/upload/image_hosting/48cwwoie.png)
-- ![Memory Viewer](https://cdn.luogu.com.cn/upload/image_hosting/ngblvant.png)
+- ![Memory Viewer](https://cdn.luogu.com.cn/upload/image_hosting/m3fwbh3j.png)
 
 ### 🎯 Usability
 - On-screen function-key menu
