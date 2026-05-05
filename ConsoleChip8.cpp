@@ -423,9 +423,9 @@ void showMemoryViewer(Chip8& chip)
 {
     const int ADDR_START = 0x0000;
     const int ADDR_END   = 0x1000;   // 4096 bytes
-    const int BYTES_PER_LINE = 2;    // 每行显示2个字节
+    const int BYTES_PER_LINE = 16;
     const int TOTAL_LINES = (ADDR_END - ADDR_START + BYTES_PER_LINE - 1) / BYTES_PER_LINE; // 2048? 不对，2048*2=4096，正确：2048行
-    const int VIEW_HEIGHT = 29;      // 一次显示的行数
+    const int VIEW_HEIGHT = 30;      // 一次显示的行数
 
     uint16_t pc = chip.getPC();
     int current_line = pc / BYTES_PER_LINE;
@@ -455,7 +455,7 @@ void showMemoryViewer(Chip8& chip)
         // 第二行：状态信息
         cout << "PC = 0x" << hex << uppercase << pc 
              << "   Selected: 0x" << selected_addr
-             << "   [UP/DOWN] Scroll & Move   [LEFT/RIGHT] Move   [Space] toggle breakpoint   [ESC/F5] Exit\n\n";
+             << "   [UP/DOWN] Scroll & Move   [LEFT/RIGHT] Move   [Space] toggle breakpoint   [ESC/F5] Exit\n";
         
         // 打印内存区域
         for (int line = scroll_line; line < scroll_line + VIEW_HEIGHT && line < TOTAL_LINES; ++line)
