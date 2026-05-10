@@ -32,8 +32,7 @@ struct EmuConfig
     char pixel_char = '#';
     bool sound_enabled = true;
 };
-
-EmuConfig loadConfig(const string& configPath = "chip8.cfg")
+EmuConfig loadConfig(const string& configPath = "chip8.ini")
 {
     EmuConfig cfg;
     ifstream file(configPath);
@@ -53,20 +52,39 @@ EmuConfig loadConfig(const string& configPath = "chip8.cfg")
         }
         return cfg;
     }
+
+    // 跳过 UTF-8 BOM (EF BB BF)
+    char bom[3];
+    file.read(bom, 3);
+    if (!(bom[0] == (char)0xEF && bom[1] == (char)0xBB && bom[2] == (char)0xBF))
+        file.seekg(0); // 没有 BOM，回到开头
+
     string line;
     while (getline(file, line))
     {
-        if (line.empty() || line[0] == '#')
-            continue;
+        // 去除行首尾空格
+        size_t start = line.find_first_not_of(" \t\r\n");
+        if (start == string::npos) continue;
+        if (line[start] == '#') continue;
+
+        // 查找等号
         size_t eqPos = line.find('=');
-        if (eqPos == string::npos)
-            continue;
-        string key = line.substr(0, eqPos);
+        if (eqPos == string::npos) continue;
+
+        string key = line.substr(start, eqPos - start);
+        // 去除 key 尾部空格
+        key.erase(key.find_last_not_of(" \t") + 1);
+
         string value = line.substr(eqPos + 1);
-        size_t start = value.find_first_not_of(" \t");
-        size_t end = value.find_last_not_of(" \t");
-        if (start != string::npos && end != string::npos)
-            value = value.substr(start, end - start + 1);
+        start = value.find_first_not_of(" \t\r\n");
+        if (start != string::npos)
+            value = value.substr(start);
+        // 去除 value 尾部空格和注释
+        size_t commentPos = value.find('#');
+        if (commentPos != string::npos)
+            value = value.substr(0, commentPos);
+        value.erase(value.find_last_not_of(" \t\r\n") + 1);
+
         if (key == "ops_per_frame")
             cfg.ops_per_frame = stoi(value);
         else if (key == "frame_ms")
@@ -78,7 +96,6 @@ EmuConfig loadConfig(const string& configPath = "chip8.cfg")
     }
     return cfg;
 }
-
 class Chip8
 {
 private:
@@ -97,6 +114,9 @@ private:
     atomic<bool> should_play_sound;
     atomic<bool> stop_sound_thread;
     thread sound_thread;
+    LARGE_INTEGER timerFreq;
+    LARGE_INTEGER lastTimerUpdate;
+    static const double TIMER_PERIOD_MS;  // 60Hz = 16.666... ms
 
 public:
     set<uint16_t> breakpoints;
@@ -126,6 +146,8 @@ public:
         };
         memcpy(memory, fontset, 80);
         srand((unsigned)time(nullptr));
+        QueryPerformanceFrequency(&timerFreq);
+        QueryPerformanceCounter(&lastTimerUpdate);
 
         sound_thread = thread([this]()
         {
@@ -182,6 +204,9 @@ public:
         delay_timer = 0;
         sound_timer = 0;
         memset(display, 0, sizeof(display));
+
+        // 重置定时器计时基准
+        QueryPerformanceCounter(&lastTimerUpdate);
         return true;
     }
 
@@ -220,6 +245,9 @@ public:
         dump.read(reinterpret_cast<char*>(&delay_timer), sizeof(delay_timer));
         dump.read(reinterpret_cast<char*>(&sound_timer), sizeof(sound_timer));
         dump.read(reinterpret_cast<char*>(display), sizeof(display));
+
+        // 重置定时器计时基准
+        QueryPerformanceCounter(&lastTimerUpdate);
         return dump.good();
     }
 
@@ -248,9 +276,9 @@ public:
             switch (opcode & 0x000F)
             {
             case 0x0: { uint8_t X = (opcode >> 8) & 0x0F; uint8_t Y = (opcode >> 4) & 0x0F; V[X] = V[Y]; } break;
-            case 0x1: { uint8_t X = (opcode >> 8) & 0x0F; uint8_t Y = (opcode >> 4) & 0x0F; V[X] |= V[Y]; V[0xF] = 0; } break;
-            case 0x2: { uint8_t X = (opcode >> 8) & 0x0F; uint8_t Y = (opcode >> 4) & 0x0F; V[X] &= V[Y]; V[0xF] = 0; } break;
-            case 0x3: { uint8_t X = (opcode >> 8) & 0x0F; uint8_t Y = (opcode >> 4) & 0x0F; V[X] ^= V[Y]; V[0xF] = 0; } break;
+            case 0x1: { uint8_t X = (opcode >> 8) & 0x0F; uint8_t Y = (opcode >> 4) & 0x0F; V[X] |= V[Y]; } break;
+            case 0x2: { uint8_t X = (opcode >> 8) & 0x0F; uint8_t Y = (opcode >> 4) & 0x0F; V[X] &= V[Y]; } break;
+            case 0x3: { uint8_t X = (opcode >> 8) & 0x0F; uint8_t Y = (opcode >> 4) & 0x0F; V[X] ^= V[Y]; } break;
             case 0x4: { uint8_t X = (opcode >> 8) & 0x0F; uint8_t Y = (opcode >> 4) & 0x0F; uint16_t sum = V[X] + V[Y]; V[0xF] = sum > 0xFF; V[X] = sum & 0xFF; } break;
             case 0x5: { uint8_t X = (opcode >> 8) & 0x0F; uint8_t Y = (opcode >> 4) & 0x0F; V[0xF] = V[X] >= V[Y]; V[X] -= V[Y]; } break;
             case 0x6: { uint8_t X = (opcode >> 8) & 0x0F; V[0xF] = V[X] & 0x01; V[X] >>= 1; } break;
@@ -358,18 +386,28 @@ public:
         }
     }
 
+    // 精确定时器更新：基于高精度时钟，按真实时间递减 timer
     void updateTimers()
     {
-        if (delay_timer > 0) delay_timer--;
-        if (sound_timer > 0)
+        LARGE_INTEGER now;
+        QueryPerformanceCounter(&now);
+        double elapsed_ms = (now.QuadPart - lastTimerUpdate.QuadPart) * 1000.0 / timerFreq.QuadPart;
+
+        // 按每 TIMER_PERIOD_MS 毫秒递减一次
+        if (elapsed_ms >= TIMER_PERIOD_MS)
         {
-            sound_timer--;
-            should_play_sound = true;
+            int ticks = static_cast<int>(elapsed_ms / TIMER_PERIOD_MS);
+            if (ticks > 0)
+            {
+                delay_timer = (delay_timer > ticks) ? delay_timer - ticks : 0;
+                sound_timer = (sound_timer > ticks) ? sound_timer - ticks : 0;
+                // 更新基准时间，只减去已处理的时间，避免积累误差
+                lastTimerUpdate.QuadPart += static_cast<LONGLONG>(ticks * TIMER_PERIOD_MS * timerFreq.QuadPart / 1000.0);
+            }
         }
-        else
-        {
-            should_play_sound = false;
-        }
+
+        // 声音播放标志
+        should_play_sound = (sound_timer > 0);
     }
 
     uint16_t getPC() const { return pc; }
@@ -434,6 +472,9 @@ public:
     }
 };
 
+// 定义静态常量（60Hz 定时器周期）
+const double Chip8::TIMER_PERIOD_MS = 1000.0 / 60.0;
+
 enum class AppState
 {
     MENU,
@@ -474,7 +515,7 @@ void showMemoryViewer(Chip8& chip)
         {
             int base = line * BYTES_PER_LINE;
             color(7);
-            cout << hex << uppercase << setw(4) << setfill('0') << base << ": ";
+            cout <<"0x"<< hex << uppercase << setw(4) << setfill('0') << base << ": ";
 
             for (int col = 0; col < BYTES_PER_LINE; ++col)
             {
@@ -664,6 +705,13 @@ public:
         QueryPerformanceCounter(&now);
         return static_cast<double>(now.QuadPart - start.QuadPart) / frequency.QuadPart;
     }
+    // 获取当前绝对时间（秒）
+    double currentSeconds() const
+    {
+        LARGE_INTEGER now;
+        QueryPerformanceCounter(&now);
+        return static_cast<double>(now.QuadPart) / frequency.QuadPart;
+    }
     void sleepUntil(double targetSeconds)
     {
         while (elapsedSeconds() < targetSeconds) Sleep(1);
@@ -685,11 +733,11 @@ int main()
     bool lastF1 = false, lastF2 = false, lastF3 = false, lastF4 = false, lastF5 = false;
     const double FRAME_SEC = cfg.frame_ms / 1000.0;
     PreciseTimer frameTimer;
-    DWORD lastTimerTick = GetTickCount();
     bool romLoaded = false;
 
     system("cls");
     DrawTopBar(state, romLoaded);
+    timeBeginPeriod(1);
 
     while (1)
     {
@@ -717,7 +765,6 @@ int main()
                     system("cls");
                     DrawTopBar(state, romLoaded);
                     frameTimer.reset();
-                    lastTimerTick = GetTickCount();
                     chip.render();
                 }
                 else
@@ -744,7 +791,6 @@ int main()
                     system("cls");
                     DrawTopBar(state, romLoaded);
                     frameTimer.reset();
-                    lastTimerTick = GetTickCount();
                     chip.render();
                 }
                 else
@@ -764,6 +810,7 @@ int main()
             else if (curF4 && !lastF4)
             {
                 ShowConsoleCursor(true);
+                timeEndPeriod(1);
                 return 0;
             }
             Sleep(50);
@@ -781,7 +828,6 @@ int main()
                     state = AppState::RUNNING;
                 DrawTopBar(state, romLoaded);
                 frameTimer.reset();
-                lastTimerTick = GetTickCount();
                 if (state == AppState::RUNNING)
                     chip.render();
             }
@@ -839,7 +885,8 @@ int main()
 
             if (state == AppState::RUNNING)
             {
-                double frameStart = frameTimer.elapsedSeconds();
+                // 记录帧开始绝对时间
+                double frameStartAbs = frameTimer.currentSeconds();
                 for (int i = 0; i < cfg.ops_per_frame; ++i)
                 {
                     if (chip.isBreakpointHit())
@@ -857,21 +904,16 @@ int main()
                     chip.emulateCycle();
                 }
                 chip.updateKeyboard();
-                DWORD now = GetTickCount();
-                if (now - lastTimerTick >= cfg.frame_ms)
-                {
-                    chip.updateTimers();
-                    lastTimerTick = now;
-                }
+                chip.updateTimers();
                 chip.render();
-                double elapsed = frameTimer.elapsedSeconds() - frameStart;
-                double remaining = FRAME_SEC - elapsed;
-                if (remaining > 0.001)
+                double targetEnd = frameStartAbs + FRAME_SEC;
+                double remaining = targetEnd - frameTimer.currentSeconds();
+                if (remaining > 0.002)
                 {
-                    Sleep(static_cast<DWORD>(remaining * 1000 * 0.9));
-                    while (frameTimer.elapsedSeconds() - frameStart < FRAME_SEC)
-                        YieldProcessor();
+                    Sleep(static_cast<DWORD>((remaining - 0.001) * 1000));
                 }
+                while (frameTimer.currentSeconds() < targetEnd)
+                    YieldProcessor();
             }
         }
         else if (state == AppState::DEBUG)
@@ -919,7 +961,6 @@ int main()
                 system("cls");
                 DrawTopBar(state, romLoaded);
                 frameTimer.reset();
-                lastTimerTick = GetTickCount();
                 chip.render();
             }
             else if (curF5 && !lastF5)
@@ -933,5 +974,7 @@ int main()
         }
         lastF1 = curF1; lastF2 = curF2; lastF3 = curF3; lastF4 = curF4; lastF5 = curF5;
     }
+
+    timeEndPeriod(1);
     return 0;
 }
